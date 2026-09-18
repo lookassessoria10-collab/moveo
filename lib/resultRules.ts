@@ -102,3 +102,11 @@ export function generateSummary(
 
   return sentences;
 }
+
+/** Converte a intensidade de dor (0-10) relatada pela própria pessoa em uma palavra simples. */
+export function painLabel(intensity: number): string {
+  if (intensity <= 0) return "Sem dor";
+  if (intensity <= 3) return "Dor leve";
+  if (intensity <= 6) return "Dor moderada";
+  return "Dor intensa";
+}
