@@ -1,0 +1,516 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useCamera } from "@/hooks/useCamera";
+import { usePoseLandmarker } from "@/lib/pose/usePoseLandmarker";
+import { FrameLandmarks, Point2D } from "@/lib/types";
+import { calculateTrunkAngle } from "@/lib/angles";
+import { distance, midpoint } from "@/lib/geometry";
+import { MovementStateMachine } from "@/lib/movementDetection";
+import { MovingAverage } from "@/lib/smoothing";
+import { calculateAngularVelocity, calculateMovementDuration } from "@/lib/movementMetrics";
+import { calculateMaxTrunkCompensation } from "@/lib/trunkCompensation";
+import { KNEE_CONFIG } from "@/config/modules/knee";
+import { calculateKneeAngle, kneeFlexionFromRawAngle } from "../angles";
+import { useKneeStore, KNEE_QUEUE, KneeQueueItem } from "../store";
+import { KneeAttempt, KneeMovementFrame, Side } from "../types";
+import { drawPoseOverlay } from "@/components/PoseOverlay";
+import { PainQuestionScreen } from "./screens/PainQuestionScreen";
+import { Button } from "@/components/ui/Button";
+
+const REPS = KNEE_CONFIG.protocol.repetitionsPerMovement;
+const CALIBRATION_MS = KNEE_CONFIG.protocol.calibrationDurationMs;
+const VISIBILITY_MIN = KNEE_CONFIG.thresholds.landmarkVisibilityMin;
+
+function visible(p: Point2D | undefined): boolean {
+  return !!p && (p.visibility === undefined || p.visibility >= VISIBILITY_MIN);
+}
+
+/** Escolhe automaticamente o lado com melhor visibilidade do joelho — usado em testes de perfil sem lado fixo (sentar e levantar). */
+function pickVisibleSide(landmarks: FrameLandmarks): Side {
+  const rightVis = landmarks.rightKnee.visibility ?? 1;
+  const leftVis = landmarks.leftKnee.visibility ?? 1;
+  return rightVis >= leftVis ? "right" : "left";
+}
+
+export function KneeCameraFlow() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const camera = useCamera(videoRef);
+
+  const screen = useKneeStore((s) => s.screen);
+  const debugMode = useKneeStore((s) => s.debugMode);
+  const toggleDebugMode = useKneeStore((s) => s.toggleDebugMode);
+  const queueIndex = useKneeStore((s) => s.queueIndex);
+  const calibration = useKneeStore((s) => s.calibration);
+  const item: KneeQueueItem | null = KNEE_QUEUE[queueIndex] ?? null;
+
+  const [positioningOk, setPositioningOk] = useState(false);
+  const [positioningMsg, setPositioningMsg] = useState("Procurando você...");
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
+  const [testUi, setTestUi] = useState<{
+    repIndex: number;
+    angle: number | null;
+    message: string;
+    countdown: number | null;
+    lost: boolean;
+  }>({ repIndex: 0, angle: null, message: "", countdown: null, lost: false });
+
+  const holdStartRef = useRef<number | null>(null);
+  const calibrationStartRef = useRef<number | null>(null);
+  const calibrationSamplesRef = useRef<
+    { trunkAngle: number; rightKneeAngle: number; leftKneeAngle: number; hipMidX: number }[]
+  >([]);
+  const trackedSideRef = useRef<Side>("right");
+  const neutralSignalRef = useRef(0);
+
+  const machineRef = useRef(new MovementStateMachine(KNEE_CONFIG.thresholds.movementDetection));
+  const angleMaRef = useRef(new MovingAverage(5));
+  const repIndexRef = useRef(0);
+  const capturingRef = useRef(false);
+  const framesBufferRef = useRef<KneeMovementFrame[]>([]);
+  const startTsRef = useRef(0);
+  const peakTsRef = useRef(0);
+  const lostCountRef = useRef(0);
+  const armedRef = useRef(false);
+  const reArmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handsNearHipRef = useRef(false);
+
+  useEffect(() => {
+    if (screen === "camera") camera.start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen]);
+
+  useEffect(() => {
+    if (screen === "camera" && camera.status === "ready") {
+      useKneeStore.getState().setScreen("reposition");
+    }
+  }, [screen, camera.status]);
+
+  // (re)inicia bloco de teste ao entrar em "test"
+  useEffect(() => {
+    if (screen !== "test" || !item) return;
+    const baseline = useKneeStore.getState().calibration;
+    if (!baseline) return;
+
+    machineRef.current.reset();
+    angleMaRef.current.reset();
+    repIndexRef.current = 0;
+    capturingRef.current = false;
+    framesBufferRef.current = [];
+    armedRef.current = false;
+
+    let cancelled = false;
+    let count = KNEE_CONFIG.protocol.countdownSeconds;
+    setTestUi({ repIndex: 0, angle: null, message: "", countdown: count, lost: false });
+
+    const neutralSignal = () => {
+      if (item.test === "flexion") {
+        const raw =
+          item.side === "right" ? baseline.neutralKneeAngleRight : baseline.neutralKneeAngleLeft;
+        return kneeFlexionFromRawAngle(raw);
+      }
+      if (item.test === "squat") {
+        return (
+          (kneeFlexionFromRawAngle(baseline.neutralKneeAngleRight) +
+            kneeFlexionFromRawAngle(baseline.neutralKneeAngleLeft)) /
+          2
+        );
+      }
+      return 0; // sitToStand: sinal é definido como progresso a partir do neutro sentado
+    };
+
+    const tick = () => {
+      if (cancelled) return;
+      count -= 1;
+      if (count > 0) {
+        setTestUi((u) => ({ ...u, countdown: count }));
+        setTimeout(tick, 1000);
+      } else {
+        setTestUi((u) => ({ ...u, countdown: null }));
+        neutralSignalRef.current = neutralSignal();
+        machineRef.current.arm(neutralSignalRef.current);
+        armedRef.current = true;
+      }
+    };
+    const initialTimer = setTimeout(tick, 1000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(initialTimer);
+      if (reArmTimerRef.current) clearTimeout(reArmTimerRef.current);
+    };
+  }, [screen, queueIndex]);
+
+  const checkQuality = (landmarks: FrameLandmarks | null): { ok: boolean; message: string } => {
+    if (!landmarks) return { ok: false, message: "Não conseguimos ver você." };
+    if (!item) return { ok: false, message: "" };
+
+    if (item.test === "squat") {
+      const required = [
+        landmarks.leftHip,
+        landmarks.rightHip,
+        landmarks.leftKnee,
+        landmarks.rightKnee,
+        landmarks.leftAnkle,
+        landmarks.rightAnkle,
+      ];
+      if (!required.every(visible)) {
+        return { ok: false, message: "Precisamos enxergar os dois joelhos e tornozelos." };
+      }
+      return { ok: true, message: "Perfeito! Posição ideal." };
+    }
+
+    if (item.test === "flexion") {
+      const side = item.side as Side;
+      const hip = side === "right" ? landmarks.rightHip : landmarks.leftHip;
+      const knee = side === "right" ? landmarks.rightKnee : landmarks.leftKnee;
+      const ankle = side === "right" ? landmarks.rightAnkle : landmarks.leftAnkle;
+      if (![hip, knee, ankle].every(visible)) {
+        return { ok: false, message: "Precisamos enxergar seu quadril, joelho e tornozelo." };
+      }
+      return { ok: true, message: "Perfeito! Posição ideal." };
+    }
+
+    // sitToStand
+    const side = trackedSideRef.current;
+    const hip = side === "right" ? landmarks.rightHip : landmarks.leftHip;
+    const knee = side === "right" ? landmarks.rightKnee : landmarks.leftKnee;
+    const ankle = side === "right" ? landmarks.rightAnkle : landmarks.leftAnkle;
+    if (![hip, knee, ankle].every(visible)) {
+      return { ok: false, message: "Precisamos enxergar seu quadril, joelho e tornozelo." };
+    }
+    return { ok: true, message: "Perfeito! Posição ideal." };
+  };
+
+  const handleFrame = (landmarks: FrameLandmarks | null) => {
+    const timestamp = performance.now();
+    const currentScreen = useKneeStore.getState().screen;
+    drawFrame(landmarks);
+
+    if (currentScreen === "positioning") {
+      if (landmarks) trackedSideRef.current = pickVisibleSide(landmarks);
+      const check = checkQuality(landmarks);
+      setPositioningOk(check.ok);
+      setPositioningMsg(check.message);
+      if (check.ok) {
+        if (holdStartRef.current === null) holdStartRef.current = timestamp;
+        if (timestamp - holdStartRef.current >= 1000) {
+          holdStartRef.current = null;
+          useKneeStore.getState().setScreen("calibration");
+        }
+      } else {
+        holdStartRef.current = null;
+      }
+      return;
+    }
+
+    if (currentScreen === "calibration") {
+      if (!landmarks || !item) {
+        calibrationStartRef.current = null;
+        calibrationSamplesRef.current = [];
+        setCalibrationProgress(0);
+        return;
+      }
+      if (calibrationStartRef.current === null) calibrationStartRef.current = timestamp;
+
+      const trunkAngle = calculateTrunkAngle(
+        landmarks.leftShoulder,
+        landmarks.rightShoulder,
+        landmarks.leftHip,
+        landmarks.rightHip
+      );
+      const rightKneeAngle = calculateKneeAngle(landmarks.rightHip, landmarks.rightKnee, landmarks.rightAnkle);
+      const leftKneeAngle = calculateKneeAngle(landmarks.leftHip, landmarks.leftKnee, landmarks.leftAnkle);
+      const hipMidX = midpoint(landmarks.leftHip, landmarks.rightHip).x;
+      calibrationSamplesRef.current.push({ trunkAngle, rightKneeAngle, leftKneeAngle, hipMidX });
+
+      const elapsed = timestamp - calibrationStartRef.current;
+      const progress = Math.min(1, elapsed / CALIBRATION_MS);
+      setCalibrationProgress(progress);
+
+      if (progress >= 1) {
+        const samples = calibrationSamplesRef.current;
+        const avg = (key: keyof (typeof samples)[number]) =>
+          samples.reduce((sum, s) => sum + s[key], 0) / samples.length;
+
+        useKneeStore.getState().setCalibration({
+          neutralTrunkAngle: avg("trunkAngle"),
+          neutralKneeAngleRight: avg("rightKneeAngle"),
+          neutralKneeAngleLeft: avg("leftKneeAngle"),
+          neutralHipMidX: avg("hipMidX"),
+          capturedAt: Date.now(),
+        });
+        calibrationStartRef.current = null;
+        calibrationSamplesRef.current = [];
+        useKneeStore.getState().setScreen("test");
+      }
+      return;
+    }
+
+    if (currentScreen === "test") {
+      handleTestFrame(landmarks, timestamp);
+    }
+  };
+
+  const handleTestFrame = (landmarks: FrameLandmarks | null, timestamp: number) => {
+    if (!armedRef.current || !item || !calibration) return;
+
+    const check = checkQuality(landmarks);
+    if (!check.ok || !landmarks) {
+      lostCountRef.current += 1;
+      if (lostCountRef.current > 8 && !testUi.lost) {
+        setTestUi((u) => ({ ...u, lost: true, message: "Perdi a referência do seu movimento. Volte à posição indicada." }));
+        machineRef.current.reset();
+        framesBufferRef.current = [];
+        capturingRef.current = false;
+      }
+      return;
+    }
+    if (testUi.lost) {
+      setTestUi((u) => ({ ...u, lost: false, message: "" }));
+    }
+    lostCountRef.current = 0;
+
+    const trunkAngle = calculateTrunkAngle(
+      landmarks.leftShoulder,
+      landmarks.rightShoulder,
+      landmarks.leftHip,
+      landmarks.rightHip
+    );
+    const rightRaw = calculateKneeAngle(landmarks.rightHip, landmarks.rightKnee, landmarks.rightAnkle);
+    const leftRaw = calculateKneeAngle(landmarks.leftHip, landmarks.leftKnee, landmarks.leftAnkle);
+
+    const side: Side = item.side === "both" ? trackedSideRef.current : (item.side as Side);
+    let rawSignal: number;
+    const extra: Partial<KneeMovementFrame> = {};
+
+    if (item.test === "flexion") {
+      rawSignal = kneeFlexionFromRawAngle(side === "right" ? rightRaw : leftRaw);
+    } else if (item.test === "squat") {
+      rawSignal = (kneeFlexionFromRawAngle(rightRaw) + kneeFlexionFromRawAngle(leftRaw)) / 2;
+      const hipMid = midpoint(landmarks.leftHip, landmarks.rightHip);
+      const hipWidth = distance(landmarks.leftHip, landmarks.rightHip) || 1;
+      extra.otherKneeAngle = side === "right" ? leftRaw : rightRaw;
+      extra.hipLateralShift = (hipMid.x - calibration.neutralHipMidX) / hipWidth;
+    } else {
+      const neutralSeated = kneeFlexionFromRawAngle(
+        side === "right" ? calibration.neutralKneeAngleRight : calibration.neutralKneeAngleLeft
+      );
+      const currentFlexion = kneeFlexionFromRawAngle(side === "right" ? rightRaw : leftRaw);
+      rawSignal = Math.max(0, neutralSeated - currentFlexion);
+      const wrist = side === "right" ? landmarks.rightWrist : landmarks.leftWrist;
+      const hip = side === "right" ? landmarks.rightHip : landmarks.leftHip;
+      const near = distance(wrist, hip) < 0.15;
+      extra.handsNearHip = near;
+      if (near) handsNearHipRef.current = true;
+    }
+
+    const signal = angleMaRef.current.push(rawSignal);
+    const detection = machineRef.current.update(signal);
+
+    if (detection.justStarted) {
+      startTsRef.current = timestamp;
+      capturingRef.current = true;
+      framesBufferRef.current = [];
+      handsNearHipRef.current = false;
+    }
+
+    if (capturingRef.current) {
+      const hip = side === "right" ? landmarks.rightHip : landmarks.leftHip;
+      const knee = side === "right" ? landmarks.rightKnee : landmarks.leftKnee;
+      const ankle = side === "right" ? landmarks.rightAnkle : landmarks.leftAnkle;
+      framesBufferRef.current.push({
+        timestamp,
+        hip,
+        knee,
+        ankle,
+        trunkAngle,
+        kneeAngle: side === "right" ? rightRaw : leftRaw,
+        ...extra,
+      });
+    }
+
+    if (detection.justReachedPeak) peakTsRef.current = timestamp;
+
+    if (detection.justCompleted) {
+      capturingRef.current = false;
+      const maxAngle = machineRef.current.getPeakAngle();
+      const duration = calculateMovementDuration(startTsRef.current, peakTsRef.current || timestamp);
+      const attempt: KneeAttempt = {
+        test: item.test,
+        side: item.side,
+        repetitionIndex: repIndexRef.current + 1,
+        frames: framesBufferRef.current,
+        maxAngle,
+        startTimestamp: startTsRef.current,
+        peakTimestamp: peakTsRef.current || timestamp,
+        endTimestamp: timestamp,
+        duration,
+        averageAngularVelocity: calculateAngularVelocity(maxAngle, duration),
+        maxTrunkCompensation: calculateMaxTrunkCompensation(framesBufferRef.current, calibration.neutralTrunkAngle),
+        handsUsed: item.test === "sitToStand" ? handsNearHipRef.current : undefined,
+      };
+      useKneeStore.getState().addAttempt(attempt);
+      repIndexRef.current += 1;
+      framesBufferRef.current = [];
+
+      if (repIndexRef.current >= REPS) {
+        armedRef.current = false;
+        useKneeStore.getState().setScreen("painQuestion");
+        setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "" }));
+      } else {
+        armedRef.current = false;
+        setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "Muito bem. Volte à posição inicial." }));
+        reArmTimerRef.current = setTimeout(() => {
+          machineRef.current.arm(neutralSignalRef.current);
+          armedRef.current = true;
+          setTestUi((u) => ({ ...u, message: "" }));
+        }, 1600);
+      }
+    } else {
+      setTestUi((u) => (u.angle === Math.round(signal) ? u : { ...u, angle: Math.round(signal) }));
+    }
+  };
+
+  const drawFrame = (landmarks: FrameLandmarks | null) => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video || !video.videoWidth) return;
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!landmarks) return;
+    drawPoseOverlay(ctx, landmarks, canvas.width, canvas.height, {});
+  };
+
+  usePoseLandmarker(videoRef, (lm) => handleFrame(lm), camera.status === "ready");
+
+  if (!item) return null;
+
+  return (
+    <div className="relative flex min-h-dvh w-full flex-col bg-black">
+      <div
+        className="relative mx-auto w-full flex-1 overflow-hidden bg-black"
+        style={{ aspectRatio: "9 / 16", maxHeight: "100dvh" }}
+      >
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          className="absolute inset-0 h-full w-full object-cover"
+          style={{ transform: "scaleX(-1)" }}
+        />
+        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+
+        {(screen === "camera") && (
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+            <p className="text-lg font-semibold text-white">
+              {camera.status === "requesting" && "Solicitando acesso à câmera..."}
+              {camera.status === "denied" && "Permita o acesso à câmera para continuar."}
+              {camera.status === "unavailable" && "Nenhuma câmera encontrada neste dispositivo."}
+            </p>
+          </div>
+        )}
+
+        {screen === "reposition" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-moveo-bg p-8 text-center">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-moveo-primary">
+              {item.orientation === "lateral" ? "Celular DE LADO" : "Celular DE FRENTE"}
+            </p>
+            <h2 className="text-xl font-bold text-moveo-ink">{item.title}</h2>
+            <p className="mt-3 text-sm leading-relaxed text-moveo-muted">
+              {item.repositionInstruction}
+            </p>
+            <Button
+              className="mt-8"
+              onClick={() => useKneeStore.getState().setScreen("positioning")}
+            >
+              JÁ POSICIONEI
+            </Button>
+          </div>
+        )}
+
+        {screen === "positioning" && (
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+            <p className="text-lg font-semibold text-white">{positioningMsg}</p>
+          </div>
+        )}
+
+        {screen === "calibration" && (
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+            <p className="text-lg font-semibold text-white">{item.calibrationInstruction}</p>
+            <p className="mt-1 text-sm text-white/80">Estamos ajustando a medição ao seu corpo.</p>
+            <div className="mx-auto mt-4 h-2 w-48 overflow-hidden rounded-full bg-white/20">
+              <div
+                className="h-full bg-moveo-primary transition-all"
+                style={{ width: `${calibrationProgress * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {screen === "test" && (
+          <>
+            <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-5 pt-8 text-center">
+              <p className="text-sm font-medium text-white/70">{item.title}</p>
+              <p className="mt-1 text-xs text-white/60">
+                Rep {Math.min(repIndexRef.current + 1, REPS)} de {REPS}
+              </p>
+            </div>
+
+            {testUi.countdown !== null && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                <span className="text-7xl font-bold text-white">{testUi.countdown}</span>
+              </div>
+            )}
+
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+              {testUi.angle !== null && testUi.countdown === null && !testUi.lost && (
+                <p className="mb-2 text-4xl font-bold text-white">{testUi.angle}°</p>
+              )}
+              <p className="text-base font-medium text-white">
+                {testUi.message || item.movementInstruction}
+              </p>
+            </div>
+          </>
+        )}
+
+        {screen === "painQuestion" && (
+          <div className="absolute inset-0 flex items-center bg-moveo-bg">
+            <PainQuestionScreen />
+          </div>
+        )}
+
+        {debugMode && (
+          <div className="absolute left-2 top-2 rounded bg-black/60 p-2 font-mono text-[10px] text-lime-300">
+            <div>screen: {screen}</div>
+            <div>test: {item.test}</div>
+            <div>phase: {machineRef.current.getPhase()}</div>
+            <div>rep: {repIndexRef.current}</div>
+            <div>signal: {testUi.angle}</div>
+          </div>
+        )}
+
+        <button
+          onClick={toggleDebugMode}
+          className="absolute right-2 top-2 rounded bg-black/40 px-2 py-1 text-[10px] text-white/70"
+        >
+          debug
+        </button>
+      </div>
+
+      {(camera.status === "denied" || camera.status === "unavailable") && (
+        <div className="bg-moveo-bg p-5">
+          <Button onClick={() => useKneeStore.getState().loadDemoResult()} variant="secondary">
+            Continuar em modo demonstração
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}

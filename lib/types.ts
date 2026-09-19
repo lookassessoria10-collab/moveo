@@ -60,7 +60,19 @@ export type MovementPhase =
 export interface PainDuringMovement {
   hadPain: boolean;
   intensity?: number; // 0-10
-  moment?: "start" | "middle" | "near_limit" | "throughout" | "unknown";
+  // União ampliada de forma aditiva para cobrir o vocabulário de "momento
+  // da dor" usado pelos módulos de joelho (descent/bottom/ascent/return) e
+  // coluna, além do vocabulário original do ombro (start/middle/near_limit).
+  moment?:
+    | "start"
+    | "middle"
+    | "near_limit"
+    | "throughout"
+    | "unknown"
+    | "descent"
+    | "bottom"
+    | "ascent"
+    | "return";
 }
 
 export interface MovementAttempt {
