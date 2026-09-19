@@ -51,9 +51,6 @@ export function KneeCameraFlow() {
 
   const [positioningOk, setPositioningOk] = useState(false);
   const [positioningMsg, setPositioningMsg] = useState("Procurando você...");
-  // Proporção real do stream da câmera — ver comentário equivalente em
-  // components/CameraFlow.tsx.
-  const [videoAspect, setVideoAspect] = useState<number | null>(null);
   const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [testUi, setTestUi] = useState<{
     repIndex: number;
@@ -475,18 +472,16 @@ export function KneeCameraFlow() {
 
   return (
     <div className="relative flex min-h-dvh w-full flex-col bg-black">
+      {/* Proporção fixa em retrato — ver comentário em components/CameraFlow.tsx
+          sobre por que não usamos video.videoWidth/videoHeight aqui. */}
       <div
         className="relative mx-auto w-full flex-1 overflow-hidden bg-black"
-        style={{ aspectRatio: videoAspect ? `${videoAspect}` : "9 / 16", maxHeight: "100dvh" }}
+        style={{ aspectRatio: "9 / 16", maxHeight: "100dvh" }}
       >
         <video
           ref={videoRef}
           playsInline
           muted
-          onLoadedMetadata={(e) => {
-            const v = e.currentTarget;
-            if (v.videoWidth && v.videoHeight) setVideoAspect(v.videoWidth / v.videoHeight);
-          }}
           className="absolute inset-0 h-full w-full object-contain"
           style={{ transform: "scaleX(-1)" }}
         />

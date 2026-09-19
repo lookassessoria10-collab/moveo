@@ -57,12 +57,6 @@ export function CameraFlow() {
     key: "no_body",
     message: "Procurando você...",
   });
-  // Proporção real do stream da câmera (ex.: 3/4, 9/16...) — descoberta só
-  // depois que o vídeo carrega os metadados. Até lá usamos um palpite
-  // razoável de celular em retrato. Sem isso, forçar uma proporção fixa
-  // no container obriga a usar object-fit: cover, que corta as bordas do
-  // vídeo (efeito de "zoom") em vez de mostrar a imagem inteira.
-  const [videoAspect, setVideoAspect] = useState<number | null>(null);
   const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [testUi, setTestUi] = useState<{
     repIndex: number;
@@ -374,10 +368,19 @@ export function CameraFlow() {
 
   return (
     <div className="relative flex min-h-dvh w-full flex-col bg-black">
+      {/*
+        Proporção fixa em retrato (9:16), não calculada a partir de
+        video.videoWidth/videoHeight: no iPhone (e em alguns Android), essas
+        propriedades relatam a resolução do sensor ANTES da rotação para
+        retrato, mesmo com o vídeo já aparecendo em pé na tela. Usar esses
+        valores deixava a caixa "deitada" com tarjas pretas. object-fit:
+        contain já resolve o corte/zoom original de forma robusta com
+        qualquer proporção real de vídeo, sem precisar desses metadados.
+      */}
       <div
         className="relative mx-auto w-full flex-1 overflow-hidden bg-black"
         style={{
-          aspectRatio: videoAspect ? `${videoAspect}` : "9 / 16",
+          aspectRatio: "9 / 16",
           maxHeight: "100dvh",
         }}
       >
@@ -385,10 +388,6 @@ export function CameraFlow() {
           ref={videoRef}
           playsInline
           muted
-          onLoadedMetadata={(e) => {
-            const v = e.currentTarget;
-            if (v.videoWidth && v.videoHeight) setVideoAspect(v.videoWidth / v.videoHeight);
-          }}
           className="absolute inset-0 h-full w-full object-contain"
           style={{ transform: "scaleX(-1)" }}
         />
