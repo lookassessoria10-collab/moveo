@@ -1,20 +1,32 @@
-# MOVEO — Avaliação funcional do ombro
+# MOVEO — Plataforma de avaliação funcional por câmera
 
-MVP de uma aplicação web mobile-first que usa apenas a câmera do celular
-(via MediaPipe Pose Landmarker, no navegador) para medir características
-**funcionais** do movimento do ombro: amplitude aproximada, assimetria entre
-lados, velocidade, compensação do tronco e consistência entre repetições.
+Aplicação web mobile-first que usa apenas a câmera do celular (via
+MediaPipe Pose Landmarker, rodando inteiramente no navegador) para medir
+características **funcionais** do movimento: amplitude aproximada,
+assimetria entre lados, velocidade, compensações, consistência entre
+repetições e alinhamento observado.
 
-**A aplicação não diagnostica lesões, doenças ou condições ortopédicas.**
-Ela descreve apenas o movimento observado durante o teste.
+**A aplicação não diagnostica lesões, doenças ou condições médicas**, não
+identifica gravidade anatômica e não substitui avaliação profissional. Ela
+descreve apenas o movimento observado durante o teste.
+
+Três regiões estão disponíveis hoje, cada uma como um módulo independente
+sobre a mesma infraestrutura de câmera/visão computacional:
+
+| Região | Rota | Testes |
+| --- | --- | --- |
+| Ombro | `/assessment/shoulder` | Flexão, abdução (por lado, 3 reps) |
+| Joelho | `/assessment/knee` | Flexão/extensão (por lado), agachamento, sentar e levantar |
+| Coluna | `/assessment/spine` | Flexão anterior, inclinação lateral (dir./esq.), extensão confortável |
 
 O nome do produto ("MOVEO") e todos os textos, cores, CTA e limites
-experimentais ficam centralizados em [`config/app.ts`](config/app.ts).
+experimentais da plataforma ficam centralizados em
+[`config/app.ts`](config/app.ts); cada módulo tem sua própria configuração
+em `config/modules/<região>.ts`.
 
 ## Como instalar e rodar
 
 ```bash
-cd moveo
 npm install
 npm run dev
 ```
@@ -23,108 +35,187 @@ Abra `http://localhost:3000`. Para testar no celular, garanta que o
 computador e o celular estejam na mesma rede Wi-Fi e acesse
 `http://<IP-do-computador>:3000` (o `next dev` escuta em todas as
 interfaces de rede por padrão). Como `getUserMedia` exige HTTPS ou
-`localhost` em navegadores móveis, para testar em um celular físico fora
-da rede local será necessário publicar em HTTPS (ex.: Vercel) ou usar um
-túnel HTTPS (ex.: `ngrok`) apontando para a porta 3000.
+`localhost` em navegadores móveis, para testar fora da rede local será
+necessário publicar em HTTPS (ex.: Vercel) ou usar um túnel HTTPS (ex.:
+`ngrok`) apontando para a porta 3000.
 
 ## Como publicar na Vercel
 
-1. Suba o conteúdo da pasta `moveo/` em um repositório Git.
+1. Suba o conteúdo desta pasta em um repositório Git (já configurado —
+   ver [github.com/lookassessoria10-collab/moveo](https://github.com/lookassessoria10-collab/moveo)).
 2. Importe o repositório em [vercel.com/new](https://vercel.com/new).
 3. Nenhuma variável de ambiente é necessária — todo o processamento de
    câmera acontece no navegador do usuário.
 4. Build command padrão (`next build`) e output padrão do framework Next.js
    funcionam sem configuração adicional.
 
+## Arquitetura da plataforma
+
+```
+app/
+  page.tsx                    → Home: seleção de região (RegionSelectScreen)
+  assessment/
+    shoulder/page.tsx         → módulo Ombro
+    knee/page.tsx             → módulo Joelho
+    spine/page.tsx            → módulo Coluna
+
+lib/            → núcleo compartilhado entre todos os módulos
+  types.ts                    → Point2D, FrameLandmarks (33→18 pontos), PainDuringMovement
+  geometry.ts                 → matemática de ângulo/vetor genérica
+  angles.ts                   → ângulos do ombro + calculateTrunkAngle (reaproveitado por joelho/coluna)
+  smoothing.ts                → EMA para landmarks, média móvel para ângulos
+  movementDetection.ts        → máquina de estados de repetição (genérica)
+  trunkCompensation.ts        → classificação de compensação (genérica, thresholds injetáveis)
+  movementMetrics.ts          → duração, velocidade, consistência, diferença entre lados (genéricas)
+  safety.ts                   → hasSafetyConcern() genérico para qualquer conjunto de respostas
+  positioning.ts              → checagem de enquadramento específica do ombro
+  resultRules.ts              → painLabel() (genérico) + geração de resumo do ombro
+  pose/
+    loadPoseLandmarker.ts     → carrega o PoseLandmarker do MediaPipe (singleton)
+    convertLandmarks.ts       → converte os 33 landmarks brutos para o formato interno
+    usePoseLandmarker.ts      → hook do loop de detecção (requestAnimationFrame)
+
+hooks/useCamera.ts             → getUserMedia (compartilhado)
+stores/appStore.ts              → estado mínimo da plataforma (fora dos módulos)
+components/
+  ui/, PainScale.tsx           → primitivos de UI compartilhados
+  shared/                      → SafetyBlockedScreen e ProcessingScreen genéricos (joelho/coluna)
+  RegionSelectScreen.tsx       → tela inicial (os 3 cards de região)
+  AssessmentFlow.tsx, CameraFlow.tsx, screens/*  → módulo Ombro (original, inalterado)
+
+modules/
+  knee/    → tipos, ângulos, regras de resultado, store, dados de demo e telas do Joelho
+  spine/   → idem para a Coluna
+
+config/
+  app.ts                       → config da plataforma + protocolo/thresholds do Ombro (histórico)
+  modules/knee.ts               → protocolo/thresholds do Joelho
+  modules/spine.ts              → protocolo/thresholds da Coluna
+```
+
+### Por que o ombro não foi movido para `modules/shoulder/`
+
+O módulo de ombro já existia, publicado e funcionando, antes desta
+ampliação. Para minimizar risco de regressão, ele **não foi movido nem
+reescrito** — continua em `components/` e `stores/assessmentStore.ts`,
+exatamente como estava. A generalização do núcleo compartilhado (`lib/`)
+foi feita de forma **aditiva**: novos campos, parâmetros opcionais com
+valor padrão idêntico ao comportamento anterior, nunca removendo ou
+renomeando algo que o ombro já usava. Os módulos de Joelho e Coluna,
+sendo código novo, já nascem em `modules/<região>/`, seguindo a
+convenção pedida para o crescimento da plataforma.
+
+### Núcleo compartilhado entre os módulos
+
+- **Câmera**: `hooks/useCamera.ts` (getUserMedia, sem gravação).
+- **Pose**: `lib/pose/*` — carrega o MediaPipe Pose Landmarker uma única
+  vez e converte os 33 landmarks do BlazePose para os 18 pontos usados
+  pela aplicação (nariz, orelhas, ombros, cotovelos, punhos, quadris,
+  joelhos, tornozelos, calcanhares, pontas dos pés). O ombro usa apenas o
+  subconjunto que sempre usou; joelho e coluna usam os pontos das pernas
+  e do tronco.
+- **Suavização**: `lib/smoothing.ts` (EMA por landmark + média móvel do
+  ângulo calculado), igual para os três módulos.
+- **Detecção de repetição**: `lib/movementDetection.ts` — uma máquina de
+  estados `IDLE → READY → ASCENDING → PEAK → DESCENDING → COMPLETED` que
+  recebe qualquer sinal numérico (ângulo, ou combinação de ângulos) e
+  detecta início/pico/retorno automaticamente, sem depender de botões.
+  Cada módulo configura seus próprios limiares de sensibilidade.
+- **Compensação do tronco**: `lib/trunkCompensation.ts` — genérica sobre
+  qualquer frame que tenha um campo `trunkAngle`; aceita limites e uma
+  função de "ângulo principal" por parâmetro (com padrão compatível com o
+  ombro), para que joelho e coluna possam usar seus próprios limites.
+- **Métricas**: `lib/movementMetrics.ts` — duração, velocidade angular,
+  consistência entre repetições, diferença entre lados. Já eram genéricas
+  (trabalham com números), reaproveitadas sem alteração.
+- **Segurança**: `lib/safety.ts` — `hasSafetyConcern()` agora aceita
+  qualquer conjunto de respostas booleanas (cada módulo define suas
+  próprias perguntas).
+- **Qualidade/posicionamento**: cada módulo faz sua própria checagem de
+  enquadramento (landmarks visíveis, orientação frontal ou lateral),
+  porque os requisitos de câmera diferem bastante entre "ver os dois
+  ombros" e "ver quadril, joelho e tornozelo de perfil".
+
 ## Como funciona o MediaPipe
 
-- Usa `@mediapipe/tasks-vision` (`PoseLandmarker`), carregado no navegador a
-  partir de CDNs públicas (`jsdelivr` para o runtime wasm, `storage.googleapis.com`
-  para o modelo `pose_landmarker_lite`). Ver [`lib/pose/loadPoseLandmarker.ts`](lib/pose/loadPoseLandmarker.ts).
+- Usa `@mediapipe/tasks-vision` (`PoseLandmarker`), carregado no navegador
+  a partir de CDNs públicas (`jsdelivr` para o runtime wasm,
+  `storage.googleapis.com` para o modelo `pose_landmarker_lite`).
 - A detecção roda em `runningMode: "VIDEO"`, chamando `detectForVideo` a
-  cada frame dentro de um loop de `requestAnimationFrame`
-  ([`lib/pose/usePoseLandmarker.ts`](lib/pose/usePoseLandmarker.ts)).
-- Os 33 landmarks do BlazePose são reduzidos aos 9 pontos usados pela
-  aplicação (nariz, ombros, cotovelos, punhos, quadris) em
-  [`lib/pose/convertLandmarks.ts`](lib/pose/convertLandmarks.ts). O eixo X é
-  espelhado nessa conversão porque o vídeo é exibido em modo espelho
-  (como em qualquer app de câmera frontal) — assim overlay, ângulos e vídeo
-  ficam no mesmo referencial.
-- Nenhum vídeo, frame ou imagem é enviado a um servidor. Ver seção
-  "Privacidade" abaixo.
+  cada frame dentro de um loop de `requestAnimationFrame`.
+- O eixo X é espelhado na conversão dos landmarks porque o vídeo é exibido
+  em modo espelho (como em qualquer app de câmera frontal) — overlay,
+  ângulos e vídeo ficam no mesmo referencial.
+- Nenhum vídeo, frame ou imagem é enviado a um servidor (ver "Privacidade").
 
 ## Como os ângulos são calculados
 
-- **Flexão** e **abdução** usam a mesma função geométrica de base
-  ([`lib/angles.ts`](lib/angles.ts)): o ângulo no vértice do ombro entre o
-  vetor ombro→quadril (eixo do tronco) e o vetor ombro→cotovelo (braço).
-  Uma câmera frontal 2D não separa com confiabilidade o plano sagital
-  (flexão) do plano frontal (abdução) — na imagem, os dois movimentos
-  aparecem como "elevação do braço". Isso é uma limitação conhecida e
-  aceita explicitamente no protocolo: a diferenciação real vem da instrução
-  dada ao usuário (levantar para frente vs. lateralmente), não da geometria
-  isolada.
-- Os ângulos brutos passam por uma média móvel simples
-  ([`lib/smoothing.ts`](lib/smoothing.ts)) antes de alimentar a máquina de
-  estados de detecção de movimento, para reduzir ruído do tracking.
-- **Inclinação do tronco**: ângulo da linha entre os pontos médios dos
-  ombros e dos quadris em relação à vertical.
+- **Ombro** (flexão/abdução): ângulo no vértice do ombro entre o vetor
+  ombro→quadril (eixo do tronco) e o vetor ombro→cotovelo.
+- **Joelho** (`modules/knee/angles.ts`): ângulo bruto quadril-joelho-
+  tornozelo; convertido para "graus de flexão" (0° = perna estendida,
+  crescente conforme dobra) apenas para exibição.
+- **Coluna** (`modules/spine/angles.ts`): reaproveita a mesma
+  `calculateTrunkAngle()` do ombro (ângulo da linha ombro-médio↔quadril-
+  médio em relação à vertical) sem nenhuma alteração de código — o que
+  muda é a orientação da câmera pedida ao usuário: de lado para
+  flexão/extensão (plano sagital), de frente para inclinação lateral
+  (plano frontal). Essa é a forma mais honesta de medir cada plano com uma
+  única câmera 2D.
 
 Todos os ângulos são **estimativas de amplitude por visão computacional
-2D**, não goniometria clínica certificada.
+2D**, não goniometria clínica certificada. Uma câmera 2D não separa
+perfeitamente planos de movimento nem isola segmentos articulares — por
+isso cada teste tem uma orientação de câmera específica (indicada na tela
+de reposicionamento) e os textos sempre dizem "amplitude estimada"/
+"movimento observado", nunca um valor clínico exato.
 
-## Como funciona a detecção de movimento
+## Compensação, consistência e índices experimentais
 
-Uma máquina de estados simples ([`lib/movementDetection.ts`](lib/movementDetection.ts))
-por repetição: `IDLE → READY → ASCENDING → PEAK → DESCENDING → COMPLETED`.
-O início é detectado por variação consistente do ângulo por alguns frames
-consecutivos (evita ruído); o pico, por estabilização do ângulo ou reversão
-de direção. Os limiares (graus, nº de frames) ficam em
-`config/app.ts → thresholds.movementDetection`.
+Compensação do tronco/quadril é classificada como **mínima / moderada /
+elevada** a partir de limites configuráveis por módulo
+(`config/app.ts` para o ombro, `config/modules/knee.ts` e
+`config/modules/spine.ts` para os demais). Consistência entre repetições
+usa o desvio padrão relativo dos ângulos máximos. **Todos esses limites
+são experimentais, ainda não validados clinicamente**, e servem apenas
+para destaque visual — nunca como critério diagnóstico. O código comenta
+isso explicitamente em cada arquivo de configuração.
 
-## Como funciona a compensação do tronco
-
-Durante cada repetição, a inclinação do tronco é comparada com a
-inclinação neutra capturada na calibração
-([`lib/trunkCompensation.ts`](lib/trunkCompensation.ts)). O maior desvio
-observado classifica a repetição como compensação **mínima / moderada /
-elevada**, segundo limites configuráveis em `config/app.ts →
-thresholds.trunkCompensation`. Esses limites são **experimentais** — ainda
-não validados clinicamente — e servem apenas para destaque visual, nunca
-como critério médico.
-
-A partir da mesma lógica, é calculada a **amplitude antes da compensação**:
-o ângulo do braço no instante em que o desvio do tronco ultrapassa o
-limite mínimo pela primeira vez naquela repetição.
+O **Índice de Movimento** (0–100, apenas no módulo Ombro) é explicitamente
+experimental — combina assimetria, amplitude, consistência e compensação
+só para a própria pessoa comparar seus testes ao longo do tempo. Não é um
+score de saúde, gravidade ou lesão, não é comparado a valores
+populacionais, e **não existe um índice equivalente para joelho ou coluna**
+neste momento — não há base para um score único e comparável entre
+regiões tão diferentes.
 
 ## Limitações da câmera 2D
 
-- Uma câmera única, em plano frontal, não mede profundidade nem separa
-  plano sagital de plano frontal com precisão — os ângulos são estimativas.
+- Uma câmera única não mede profundidade nem separa planos de movimento
+  com precisão — os ângulos são estimativas, sensíveis à orientação da
+  câmera em relação ao corpo (por isso cada teste indica frontal ou
+  lateral).
 - Iluminação ruim, roupas largas, enquadramento incorreto ou perda de
   landmarks reduzem a confiabilidade da medição.
-- A "distância" do usuário à câmera não é calculada em metros: usa-se a
-  largura relativa dos ombros no frame como proxy para orientar
-  "aproxime-se" / "afaste-se" (ver [`lib/positioning.ts`](lib/positioning.ts)).
+- Nenhuma distância é calculada em metros: usa-se a visibilidade e a
+  posição relativa dos landmarks no frame para orientar o
+  posicionamento ("aproxime-se", "afaste-se", "vire-se de lado").
 - Quando uma métrica não pode ser calculada com confiança (ex.: nenhuma
   compensação relevante detectada), a interface mostra "não detectada" em
   vez de inventar um valor.
+- No módulo Coluna em particular, uma câmera 2D não isola segmentos da
+  coluna vertebral — os testes descrevem "movimento do tronco", nunca
+  "flexão lombar" ou qualquer segmento específico.
 
 ## Limitações clínicas
 
-Esta ferramenta **não diagnostica** lesões, doenças ou condições
-ortopédicas, e não deve ser usada como critério isolado para decisões
-médicas. Ela descreve apenas o movimento observado durante o teste
-(amplitude, assimetria, velocidade, compensação, consistência e dor
-autorrelatada). Antes do teste, perguntas de segurança (trauma recente,
-dor muito intensa, perda súbita de força, incapacidade de mover o braço)
-podem interromper a avaliação e recomendar buscar avaliação profissional
-(ver [`lib/safety.ts`](lib/safety.ts)).
-
-O **Índice de Movimento** (0–100) é explicitamente experimental — combina
-assimetria, amplitude, consistência e compensação apenas para permitir que
-a própria pessoa compare seus testes ao longo do tempo. Não é um score de
-saúde, gravidade ou lesão, e não é comparado a valores populacionais.
+Esta ferramenta **não diagnostica** lesões, doenças ou condições médicas
+(nenhuma região), e não deve ser usada como critério isolado para decisões
+de saúde. Ela descreve apenas o movimento observado durante o teste
+(amplitude, assimetria, velocidade, compensação, consistência, alinhamento
+observado e dor autorrelatada). Antes de cada teste, perguntas de
+segurança específicas da região podem interromper a avaliação e recomendar
+buscar avaliação profissional — nunca tentam diagnosticar a causa.
 
 ## Privacidade
 
@@ -133,49 +224,85 @@ saúde, gravidade ou lesão, e não é comparado a valores populacionais.
 - Nenhum vídeo, frame ou imagem é gravado ou enviado a um servidor.
 - Apenas landmarks, ângulos, timestamps, resultados calculados e respostas
   do usuário ficam em memória (estado do Zustand), durante a sessão.
-- Não há banco de dados neste MVP: ao fechar ou recarregar a página, os
-  dados são descartados.
+- Não há banco de dados neste momento: ao fechar ou recarregar a página,
+  os dados são descartados. O modelo de dados já foi desenhado para que,
+  no futuro, seja possível persistir e comparar testes ao longo do tempo
+  sem reestruturar tudo (cada resultado já carrega `completedAt`,
+  respostas de intake e métricas discretas, prontos para serialização).
 
 ## Modo Demonstração
 
 Se a câmera não estiver disponível (ex.: desktop sem webcam, permissão
-negada, ou nenhuma câmera detectada), a interface oferece "Continuar em
-modo demonstração", que carrega um resultado fictício
-([`lib/demoData.ts`](lib/demoData.ts)) para permitir testar toda a
-interface de resultados. A tela de resultados sempre exibe um aviso
+negada, ou nenhuma câmera detectada), a interface de cada módulo oferece
+"Continuar em modo demonstração", que carrega um resultado fictício
+próprio daquele módulo (`lib/demoData.ts`, `modules/knee/demoData.ts`,
+`modules/spine/demoData.ts`). A tela de resultados sempre exibe um aviso
 "Modo demonstração — resultados fictícios" nesse caso, e dados reais e
 fictícios nunca são combinados.
 
 ## Modo Debug
 
-Durante as telas de câmera, um botão discreto "debug" no canto superior
-direito ativa um painel com tela atual, fase da máquina de estados,
-repetição, ângulo e status de detecção de landmarks — útil para depurar o
-rastreamento sem poluir a interface para o usuário final.
+Durante as telas de câmera de qualquer módulo, um botão discreto "debug"
+no canto superior direito ativa um painel com tela atual, teste ativo,
+fase da máquina de estados, repetição e sinal/ângulo atual — útil para
+depurar o rastreamento sem poluir a interface para o usuário final.
 
 ## Testes
 
 Funções de cálculo (ângulos, comparação entre lados, consistência,
-compensação do tronco, duração, máquina de estados de detecção) são puras
-e testadas isoladamente, sem depender de câmera:
+compensação, duração, máquina de estados de detecção) são puras e
+testadas isoladamente, sem depender de câmera, para todas as três regiões:
 
 ```bash
 npm test
 ```
 
-## Arquitetura e decisões
+## Checklist de teste manual
 
-- O fluxo de telas (`components/AssessmentFlow.tsx`) é um único componente
-  client-side controlado por uma máquina de estado no Zustand
-  (`stores/assessmentStore.ts`), em vez de uma rota do Next.js por tela.
-  Isso mantém a câmera e a detecção de pose ativas continuamente entre as
-  etapas de posicionamento, calibração e teste, sem reinicializar o
-  `getUserMedia` a cada transição.
-- O motor de cálculo biomecânico (`lib/angles.ts`, `lib/trunkCompensation.ts`,
-  `lib/movementMetrics.ts`, `lib/movementDetection.ts`, `lib/resultRules.ts`)
-  é isolado de qualquer componente visual, para permitir evoluir os
-  algoritmos sem tocar na interface.
-- Preparado para evoluir (não implementado neste MVP): login, pacientes,
-  médicos, banco de dados, histórico entre sessões, comparação semanal,
-  painel médico e outras articulações (cotovelo, punho, joelho, quadril,
-  coluna).
+**Ombro** — abrir pelo celular → iniciar avaliação → responder perguntas →
+liberar câmera → posicionar → calibrar → 3 flexões direita → 3 flexões
+esquerda → 3 abduções direita → 3 abduções esquerda → dor → resultado →
+comparação → compensação → consistência → dados detalhados → refazer.
+
+**Joelho** — selecionar Joelho → perguntas → segurança → câmera →
+reposicionar (lateral) → calibrar → 3 flexões direita → reposicionar →
+3 flexões esquerda → reposicionar (frontal) → agachamento (3 reps,
+observar os dois joelhos e o tronco) → reposicionar (lateral) → sentar e
+levantar (3 reps) → dor após cada bloco → resumo → dados detalhados.
+
+**Coluna** — selecionar Coluna → perguntas → segurança → câmera →
+reposicionar (lateral) → calibrar (também captura a postura inicial) →
+flexão anterior (3 reps) → reposicionar (frontal) → inclinação direita →
+inclinação esquerda → reposicionar (lateral) → extensão confortável →
+dor após cada bloco → resultado com ângulos, diferença lateral e postura
+observada → dados detalhados.
+
+## Limitações técnicas conhecidas nesta versão
+
+- Testado estruturalmente via Modo Demonstração e revisão de código; a
+  captura real por câmera de joelho e coluna ainda não foi validada em um
+  dispositivo físico neste ambiente de desenvolvimento (o sandbox usado
+  para construir esta versão não tem acesso a uma câmera real). Recomenda-
+  se um teste físico completo antes de considerar os três módulos
+  totalmente validados.
+- O módulo de Joelho não possui relatório imprimível para o médico (só o
+  ombro tem, em `/assessment/shoulder` → "Gerar Resumo"); os critérios de
+  conclusão informados não exigiam essa peça para joelho/coluna, mas é uma
+  extensão natural futura reaproveitando o mesmo componente.
+- A escolha automática de "qual joelho está mais visível" no teste de
+  sentar-e-levantar é heurística (maior visibilidade reportada pelo
+  MediaPipe) — funciona bem quando a pessoa se senta de perfil, mas pode
+  errar em enquadramentos ambíguos.
+- Overlay visual (pontos/linhas sobre o vídeo) desenha apenas
+  ombro/cotovelo/punho/quadril; os pontos de joelho/tornozelo ainda não
+  aparecem no overlay (os cálculos os usam normalmente — é só uma
+  limitação do desenho na tela).
+
+## Preparado para o futuro
+
+Sem implementar agora: login, perfis paciente/profissional, banco de
+dados, histórico entre sessões, comparação temporal automática, painel
+médico, envio por WhatsApp, e novas regiões (cotovelo, punho, quadril,
+tornozelo, pescoço, marcha). A estrutura em `modules/<região>/` e o núcleo
+compartilhado em `lib/` foram pensados exatamente para que essas regiões
+futuras sigam o mesmo padrão do joelho e da coluna, sem tocar no núcleo.
