@@ -146,9 +146,18 @@ export function SpineCameraFlow() {
 
     const shoulderMid = midpoint(landmarks.leftShoulder, landmarks.rightShoulder);
     const hipMid = midpoint(landmarks.leftHip, landmarks.rightHip);
-    const orientation = checkOrientation(landmarks.leftShoulder, landmarks.rightShoulder, shoulderMid, hipMid, item.orientation, {
-      frontalMinRatio: SPINE_CONFIG.thresholds.framing.orientationFrontalMinRatio,
-    });
+    const orientation = checkOrientation(
+      landmarks.leftShoulder,
+      landmarks.rightShoulder,
+      shoulderMid,
+      hipMid,
+      landmarks.nose,
+      item.orientation,
+      {
+        frontalMinRatio: SPINE_CONFIG.thresholds.framing.orientationFrontalMinRatio,
+        lateralMinNoseOffsetRatio: SPINE_CONFIG.thresholds.framing.lateralMinNoseOffsetRatio,
+      }
+    );
     if (!orientation.ok) return orientation;
 
     return checkVerticalFraming(landmarks.nose, hipMid, {
@@ -291,7 +300,7 @@ export function SpineCameraFlow() {
 
     if (detection.justReachedPeak) {
       peakTsRef.current = timestamp;
-      speech.speak("Pode voltar.", { force: true });
+      speech.speak("Pode voltar.", { force: true, interrupt: false });
     }
 
     if (detection.justCompleted) {
@@ -320,13 +329,13 @@ export function SpineCameraFlow() {
         setTestUi((u) => ({ ...u, message: "" }));
       } else {
         armedRef.current = false;
-        setTestUi((u) => ({ ...u, message: "Muito bem. Volte à posição inicial." }));
-        speech.speak("Muito bem. Volte à posição inicial.", { force: true });
+        setTestUi((u) => ({ ...u, message: "Muito bem." }));
+        speech.speak("Muito bem.", { force: true, interrupt: false });
         reArmTimerRef.current = setTimeout(() => {
           machineRef.current.arm(0);
           armedRef.current = true;
           setTestUi((u) => ({ ...u, message: "" }));
-          speech.speak("Pode começar.", { force: true });
+          speech.speak("Pode começar.", { force: true, interrupt: false });
         }, 1600);
       }
     } else {

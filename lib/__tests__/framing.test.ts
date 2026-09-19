@@ -35,14 +35,17 @@ describe("checkVerticalFraming", () => {
 });
 
 describe("checkOrientation", () => {
-  const opts = { frontalMinRatio: 0.3 };
+  const opts = { frontalMinRatio: 0.3, lateralMinNoseOffsetRatio: 0.15 };
+  const shoulderMidFrontal = { x: 0.5, y: 0.3 };
+  const hipMid = { x: 0.5, y: 0.6 };
 
   it("aprova vista frontal quando os ombros estão bem afastados no eixo X", () => {
     const result = checkOrientation(
       { x: 0.35, y: 0.3 },
       { x: 0.65, y: 0.3 },
-      { x: 0.5, y: 0.3 },
-      { x: 0.5, y: 0.6 },
+      shoulderMidFrontal,
+      hipMid,
+      { x: 0.5, y: 0.25 },
       "frontal",
       opts
     );
@@ -54,7 +57,8 @@ describe("checkOrientation", () => {
       { x: 0.49, y: 0.3 },
       { x: 0.51, y: 0.3 },
       { x: 0.5, y: 0.3 },
-      { x: 0.5, y: 0.6 },
+      hipMid,
+      { x: 0.5, y: 0.25 },
       "frontal",
       opts
     );
@@ -62,24 +66,30 @@ describe("checkOrientation", () => {
     expect(result.message).toMatch(/de frente/);
   });
 
-  it("sempre aprova quando esperado lateral — não há verificação confiável de 'está de lado?'", () => {
-    const perfil = checkOrientation(
-      { x: 0.49, y: 0.3 },
-      { x: 0.51, y: 0.3 },
+  it("aprova vista lateral quando o nariz está bem deslocado do centro dos ombros", () => {
+    const result = checkOrientation(
+      { x: 0.48, y: 0.3 },
+      { x: 0.52, y: 0.3 },
       { x: 0.5, y: 0.3 },
-      { x: 0.5, y: 0.6 },
+      hipMid,
+      { x: 0.56, y: 0.25 }, // nariz deslocado ~1.5x a largura do ombro
       "lateral",
       opts
     );
-    const frente = checkOrientation(
+    expect(result.ok).toBe(true);
+  });
+
+  it("pede para ficar de lado quando esperado lateral mas o nariz está centralizado (ainda de frente)", () => {
+    const result = checkOrientation(
       { x: 0.35, y: 0.3 },
       { x: 0.65, y: 0.3 },
       { x: 0.5, y: 0.3 },
-      { x: 0.5, y: 0.6 },
+      hipMid,
+      { x: 0.5, y: 0.25 }, // nariz centralizado entre os ombros
       "lateral",
       opts
     );
-    expect(perfil.ok).toBe(true);
-    expect(frente.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/de lado/);
   });
 });

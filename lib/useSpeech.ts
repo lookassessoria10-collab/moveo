@@ -75,9 +75,17 @@ export function useSpeech() {
    * Fala um texto. Por padrão, não repete a MESMA frase em menos de
    * `minIntervalMs` (evita spam quando o mesmo aviso de posicionamento se
    * repete a cada frame); `force: true` ignora essa checagem.
+   *
+   * `interrupt` (padrão true) controla se essa fala corta a que estiver
+   * tocando no momento. Avisos de posicionamento em tempo real devem
+   * interromper (a informação mais nova é a que importa), mas as frases
+   * de narração de um movimento (“Vamos começar. …”, “Pode voltar.”,
+   * “Muito bem.”) usam `interrupt: false` para entrar na fila e tocar
+   * por completo, uma depois da outra — cortar uma no meio da outra é
+   * exatamente o que soava como "áudios embaralhados".
    */
   const speak = useCallback(
-    (text: string, opts: { force?: boolean; minIntervalMs?: number } = {}) => {
+    (text: string, opts: { force?: boolean; minIntervalMs?: number; interrupt?: boolean } = {}) => {
       if (!supported || !enabled || !text) return;
       const now = Date.now();
       const minInterval = opts.minIntervalMs ?? 4000;
@@ -87,7 +95,7 @@ export function useSpeech() {
       lastTextRef.current = text;
       lastAtRef.current = now;
       try {
-        window.speechSynthesis.cancel();
+        if (opts.interrupt !== false) window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = "pt-BR";
         utterance.rate = 1;

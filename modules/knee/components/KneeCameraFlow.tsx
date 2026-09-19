@@ -217,9 +217,11 @@ export function KneeCameraFlow() {
       landmarks.rightShoulder,
       shoulderMid,
       hipMid,
+      landmarks.nose,
       item.orientation,
       {
         frontalMinRatio: KNEE_CONFIG.thresholds.framing.orientationFrontalMinRatio,
+        lateralMinNoseOffsetRatio: KNEE_CONFIG.thresholds.framing.lateralMinNoseOffsetRatio,
       }
     );
     if (!orientation.ok) return orientation;
@@ -405,7 +407,7 @@ export function KneeCameraFlow() {
 
     if (detection.justReachedPeak) {
       peakTsRef.current = timestamp;
-      speech.speak("Pode voltar.", { force: true });
+      speech.speak("Pode voltar.", { force: true, interrupt: false });
     }
 
     if (detection.justCompleted) {
@@ -436,13 +438,13 @@ export function KneeCameraFlow() {
         setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "" }));
       } else {
         armedRef.current = false;
-        setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "Muito bem. Volte à posição inicial." }));
-        speech.speak("Muito bem. Volte à posição inicial.", { force: true });
+        setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "Muito bem." }));
+        speech.speak("Muito bem.", { force: true, interrupt: false });
         reArmTimerRef.current = setTimeout(() => {
           machineRef.current.arm(neutralSignalRef.current);
           armedRef.current = true;
           setTestUi((u) => ({ ...u, message: "" }));
-          speech.speak("Pode começar.", { force: true });
+          speech.speak("Pode começar.", { force: true, interrupt: false });
         }, 1600);
       }
     } else {

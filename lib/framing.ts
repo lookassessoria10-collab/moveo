@@ -42,37 +42,48 @@ export function checkVerticalFraming(
 }
 
 /**
- * Verifica se o corpo está de frente para a câmera, para os testes que
- * exigem essa orientação (agachamento, inclinação lateral da coluna).
- * Usa a razão entre a largura dos ombros (eixo X) e a altura do tronco
- * (ombro até quadril) como proxy: de frente, essa razão é
- * consideravelmente maior do que de lado.
+ * Verifica se a orientação do corpo é compatível com a esperada para o
+ * teste atual.
  *
- * IMPORTANTE: não existe uma verificação equivalente para "está de
- * lado?" — na prática, o MediaPipe frequentemente estima uma largura de
- * ombro maior do que a real mesmo com a pessoa de perfil (o modelo foi
- * treinado majoritariamente com poses de frente/três-quartos), então essa
- * mesma razão não cai o suficiente para distinguir perfil de frente de
- * forma confiável — tentar isso apenas bloqueava usuários genuinamente
- * de lado. Para testes de perfil (flexão do joelho, sentar-e-levantar,
- * flexão/extensão da coluna), a orientação correta depende da instrução
- * na tela de reposicionamento e da checagem de visibilidade dos
- * landmarks do lado rastreado — não desta função.
+ * Para "frontal" (agachamento, inclinação lateral da coluna): usa a razão
+ * entre a largura dos ombros (eixo X) e a altura do tronco (ombro até
+ * quadril) — de frente, essa razão é consideravelmente maior do que de
+ * lado.
+ *
+ * Para "lateral" (flexão do joelho, sentar-e-levantar, flexão/extensão da
+ * coluna): NÃO usa essa mesma razão — na prática, o MediaPipe
+ * frequentemente estima uma largura de ombro maior do que a real mesmo
+ * com a pessoa de perfil (o modelo foi treinado majoritariamente com
+ * poses de frente/três-quartos), então tentar exigir uma razão pequena o
+ * bastante só bloqueava usuários genuinamente de lado. Em vez disso, usa
+ * a posição do nariz em relação ao centro dos ombros, normalizada pela
+ * largura dos ombros: de frente, o nariz fica bem próximo do centro entre
+ * os dois ombros; qualquer giro real do corpo/cabeça desloca o nariz
+ * visivelmente para um lado. O limite é propositalmente baixo — o
+ * objetivo é só rejeitar quem claramente esqueceu de virar, não exigir um
+ * perfil perfeito de 90°.
  */
 export function checkOrientation(
   leftShoulder: Point2D,
   rightShoulder: Point2D,
   shoulderMid: Point2D,
   hipMid: Point2D,
+  nose: Point2D,
   expected: "frontal" | "lateral",
-  opts: { frontalMinRatio: number }
+  opts: { frontalMinRatio: number; lateralMinNoseOffsetRatio: number }
 ): FramingResult {
-  if (expected === "lateral") return { ok: true, message: "" };
+  const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x) || 1;
 
-  const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x);
+  if (expected === "lateral") {
+    const noseOffsetRatio = Math.abs(nose.x - shoulderMid.x) / shoulderWidth;
+    if (noseOffsetRatio < opts.lateralMinNoseOffsetRatio) {
+      return { ok: false, message: "Fique de lado em relação à câmera, como na ilustração." };
+    }
+    return { ok: true, message: "" };
+  }
+
   const torsoHeight = distance(shoulderMid, hipMid) || 1;
   const ratio = shoulderWidth / torsoHeight;
-
   if (ratio < opts.frontalMinRatio) {
     return { ok: false, message: "Fique de frente para a câmera." };
   }
