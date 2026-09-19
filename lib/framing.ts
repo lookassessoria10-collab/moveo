@@ -42,11 +42,22 @@ export function checkVerticalFraming(
 }
 
 /**
- * Verifica se a orientação do corpo (de frente ou de lado para a câmera)
- * é compatível com a esperada para o teste atual. Usa a razão entre a
- * largura dos ombros (eixo X) e a altura do tronco (ombro até quadril)
- * como proxy: de lado, os dois ombros aparecem quase sobrepostos no eixo
- * X, então essa razão cai bastante em relação à vista de frente.
+ * Verifica se o corpo está de frente para a câmera, para os testes que
+ * exigem essa orientação (agachamento, inclinação lateral da coluna).
+ * Usa a razão entre a largura dos ombros (eixo X) e a altura do tronco
+ * (ombro até quadril) como proxy: de frente, essa razão é
+ * consideravelmente maior do que de lado.
+ *
+ * IMPORTANTE: não existe uma verificação equivalente para "está de
+ * lado?" — na prática, o MediaPipe frequentemente estima uma largura de
+ * ombro maior do que a real mesmo com a pessoa de perfil (o modelo foi
+ * treinado majoritariamente com poses de frente/três-quartos), então essa
+ * mesma razão não cai o suficiente para distinguir perfil de frente de
+ * forma confiável — tentar isso apenas bloqueava usuários genuinamente
+ * de lado. Para testes de perfil (flexão do joelho, sentar-e-levantar,
+ * flexão/extensão da coluna), a orientação correta depende da instrução
+ * na tela de reposicionamento e da checagem de visibilidade dos
+ * landmarks do lado rastreado — não desta função.
  */
 export function checkOrientation(
   leftShoulder: Point2D,
@@ -54,16 +65,15 @@ export function checkOrientation(
   shoulderMid: Point2D,
   hipMid: Point2D,
   expected: "frontal" | "lateral",
-  opts: { lateralMaxRatio: number; frontalMinRatio: number }
+  opts: { frontalMinRatio: number }
 ): FramingResult {
+  if (expected === "lateral") return { ok: true, message: "" };
+
   const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x);
   const torsoHeight = distance(shoulderMid, hipMid) || 1;
   const ratio = shoulderWidth / torsoHeight;
 
-  if (expected === "lateral" && ratio > opts.lateralMaxRatio) {
-    return { ok: false, message: "Fique de lado em relação à câmera, como na ilustração." };
-  }
-  if (expected === "frontal" && ratio < opts.frontalMinRatio) {
+  if (ratio < opts.frontalMinRatio) {
     return { ok: false, message: "Fique de frente para a câmera." };
   }
   return { ok: true, message: "" };

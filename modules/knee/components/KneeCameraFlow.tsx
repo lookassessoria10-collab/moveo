@@ -216,7 +216,6 @@ export function KneeCameraFlow() {
       hipMid,
       item.orientation,
       {
-        lateralMaxRatio: KNEE_CONFIG.thresholds.framing.orientationLateralMaxRatio,
         frontalMinRatio: KNEE_CONFIG.thresholds.framing.orientationFrontalMinRatio,
       }
     );

@@ -48,7 +48,8 @@ export const KNEE_CONFIG = {
       // vista frontal (agachamento): cabeça até tornozelo
       frontalMinSpanRatio: 0.6,
       frontalMaxSpanRatio: 0.98,
-      orientationLateralMaxRatio: 0.55,
+      // Só existe checagem de orientação para testes de frente (agachamento).
+      // Ver lib/framing.ts — não há verificação confiável de "está de lado?".
       orientationFrontalMinRatio: 0.3,
     },
   },

@@ -41,7 +41,9 @@ export const SPINE_CONFIG = {
     framing: {
       minSpanRatio: 0.32,
       maxSpanRatio: 0.75,
-      orientationLateralMaxRatio: 0.55,
+      // Só existe checagem de orientação para testes de frente (inclinação
+      // lateral). Ver lib/framing.ts — não há verificação confiável de
+      // "está de lado?".
       orientationFrontalMinRatio: 0.3,
     },
   },

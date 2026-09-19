@@ -144,7 +144,6 @@ export function SpineCameraFlow() {
     const shoulderMid = midpoint(landmarks.leftShoulder, landmarks.rightShoulder);
     const hipMid = midpoint(landmarks.leftHip, landmarks.rightHip);
     const orientation = checkOrientation(landmarks.leftShoulder, landmarks.rightShoulder, shoulderMid, hipMid, item.orientation, {
-      lateralMaxRatio: SPINE_CONFIG.thresholds.framing.orientationLateralMaxRatio,
       frontalMinRatio: SPINE_CONFIG.thresholds.framing.orientationFrontalMinRatio,
     });
     if (!orientation.ok) return orientation;

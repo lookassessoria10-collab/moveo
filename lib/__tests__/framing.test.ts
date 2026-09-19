@@ -35,7 +35,7 @@ describe("checkVerticalFraming", () => {
 });
 
 describe("checkOrientation", () => {
-  const opts = { lateralMaxRatio: 0.5, frontalMinRatio: 0.3 };
+  const opts = { frontalMinRatio: 0.3 };
 
   it("aprova vista frontal quando os ombros estão bem afastados no eixo X", () => {
     const result = checkOrientation(
@@ -62,8 +62,8 @@ describe("checkOrientation", () => {
     expect(result.message).toMatch(/de frente/);
   });
 
-  it("aprova vista lateral quando os ombros estão quase sobrepostos no eixo X", () => {
-    const result = checkOrientation(
+  it("sempre aprova quando esperado lateral — não há verificação confiável de 'está de lado?'", () => {
+    const perfil = checkOrientation(
       { x: 0.49, y: 0.3 },
       { x: 0.51, y: 0.3 },
       { x: 0.5, y: 0.3 },
@@ -71,11 +71,7 @@ describe("checkOrientation", () => {
       "lateral",
       opts
     );
-    expect(result.ok).toBe(true);
-  });
-
-  it("pede para ficar de lado quando esperado lateral mas ombros bem afastados (vista de frente)", () => {
-    const result = checkOrientation(
+    const frente = checkOrientation(
       { x: 0.35, y: 0.3 },
       { x: 0.65, y: 0.3 },
       { x: 0.5, y: 0.3 },
@@ -83,7 +79,7 @@ describe("checkOrientation", () => {
       "lateral",
       opts
     );
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/de lado/);
+    expect(perfil.ok).toBe(true);
+    expect(frente.ok).toBe(true);
   });
 });
