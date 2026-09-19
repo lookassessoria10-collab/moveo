@@ -25,6 +25,8 @@ export class PointEmaFilter {
 
 const LANDMARK_KEYS: (keyof FrameLandmarks)[] = [
   "nose",
+  "leftEar",
+  "rightEar",
   "leftShoulder",
   "rightShoulder",
   "leftElbow",
@@ -33,6 +35,14 @@ const LANDMARK_KEYS: (keyof FrameLandmarks)[] = [
   "rightWrist",
   "leftHip",
   "rightHip",
+  "leftKnee",
+  "rightKnee",
+  "leftAnkle",
+  "rightAnkle",
+  "leftHeel",
+  "rightHeel",
+  "leftFootIndex",
+  "rightFootIndex",
 ];
 
 /** Aplica EMA a todos os landmarks de um frame, mantendo estado entre chamadas. */

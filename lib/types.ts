@@ -11,8 +11,16 @@ export interface Point2D {
   visibility?: number;
 }
 
+/**
+ * Landmarks corporais convertidos do MediaPipe. O conjunto original (ombro)
+ * usava apenas os 9 primeiros campos; os campos abaixo foram adicionados de
+ * forma aditiva para suportar os módulos de joelho e coluna, sem alterar o
+ * comportamento do módulo de ombro (ver lib/pose/convertLandmarks.ts).
+ */
 export interface FrameLandmarks {
   nose: Point2D;
+  leftEar: Point2D;
+  rightEar: Point2D;
   leftShoulder: Point2D;
   rightShoulder: Point2D;
   leftElbow: Point2D;
@@ -21,6 +29,14 @@ export interface FrameLandmarks {
   rightWrist: Point2D;
   leftHip: Point2D;
   rightHip: Point2D;
+  leftKnee: Point2D;
+  rightKnee: Point2D;
+  leftAnkle: Point2D;
+  rightAnkle: Point2D;
+  leftHeel: Point2D;
+  rightHeel: Point2D;
+  leftFootIndex: Point2D;
+  rightFootIndex: Point2D;
 }
 
 export interface MovementFrame {

@@ -1,14 +1,18 @@
 /**
- * Configuração central da aplicação.
- * Alterar nome, marca, CTA e limites experimentais aqui — nada disso deve
- * ficar hardcoded em componentes.
+ * Configuração central da plataforma (nome, marca, cores, CTA, textos
+ * institucionais). Válida para todas as regiões (ombro, joelho, coluna).
+ *
+ * O bloco `protocol` e `thresholds` abaixo é específico do módulo OMBRO
+ * (mantido aqui por compatibilidade com o código já existente). Os módulos
+ * de joelho e coluna têm sua própria configuração em
+ * config/modules/knee.ts e config/modules/spine.ts.
  */
 
 export const APP_NAME = "MOVEO";
 
 export const APP_CONFIG = {
   name: APP_NAME,
-  tagline: "Avaliação funcional do movimento do ombro",
+  tagline: "Plataforma de avaliação funcional por câmera",
   logo: null as string | null, // caminho para logo, se houver
   colors: {
     primary: "#2B5CE6",
@@ -21,7 +25,7 @@ export const APP_CONFIG = {
 
   // Texto institucional exibido em telas de abertura / rodapé
   institutionalText:
-    "Ferramenta de acompanhamento funcional do movimento do ombro por câmera.",
+    "Ferramenta de acompanhamento funcional do movimento por câmera.",
 
   // Chamada para ação configurável ao final do relatório
   cta: {
@@ -33,7 +37,7 @@ export const APP_CONFIG = {
     scheduleUrl: "", // link externo de agendamento, se houver
   },
 
-  // Parâmetros do protocolo de teste
+  // Parâmetros do protocolo de teste — específicos do módulo Ombro.
   protocol: {
     repetitionsPerMovement: 3,
     calibrationDurationMs: 2000,
@@ -43,8 +47,10 @@ export const APP_CONFIG = {
     sides: ["right", "left"] as const,
   },
 
-  // Limites experimentais — ainda não validados clinicamente.
-  // Usados apenas para categorizar visualmente, nunca como critério médico.
+  // Limites experimentais do módulo Ombro — ainda não validados
+  // clinicamente. Usados apenas para categorizar visualmente, nunca como
+  // critério médico. Necessitam validação clínica antes de qualquer uso
+  // como critério diagnóstico.
   thresholds: {
     trunkCompensation: {
       minimalMaxDeg: 6,

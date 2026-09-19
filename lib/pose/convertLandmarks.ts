@@ -1,8 +1,12 @@
 import { FrameLandmarks, Point2D } from "../types";
 
-// Índices dos landmarks do BlazePose / MediaPipe Pose Landmarker.
+// Índices dos landmarks do BlazePose / MediaPipe Pose Landmarker (33 pontos).
+// O conjunto "leg"/"foot" foi adicionado para os módulos de joelho e coluna;
+// o módulo de ombro continua usando apenas o subconjunto original.
 const IDX = {
   nose: 0,
+  leftEar: 7,
+  rightEar: 8,
   leftShoulder: 11,
   rightShoulder: 12,
   leftElbow: 13,
@@ -11,6 +15,14 @@ const IDX = {
   rightWrist: 16,
   leftHip: 23,
   rightHip: 24,
+  leftKnee: 25,
+  rightKnee: 26,
+  leftAnkle: 27,
+  rightAnkle: 28,
+  leftHeel: 29,
+  rightHeel: 30,
+  leftFootIndex: 31,
+  rightFootIndex: 32,
 };
 
 export interface RawLandmark {
@@ -30,7 +42,7 @@ export interface RawLandmark {
  * (reflexão preserva magnitude de ângulos).
  */
 export function convertLandmarks(raw: RawLandmark[] | undefined): FrameLandmarks | null {
-  if (!raw || raw.length < 25) return null;
+  if (!raw || raw.length < 33) return null;
 
   const mirror = (p: RawLandmark): Point2D => ({
     x: 1 - p.x,
@@ -39,21 +51,13 @@ export function convertLandmarks(raw: RawLandmark[] | undefined): FrameLandmarks
     visibility: p.visibility,
   });
 
-  const required = [
-    IDX.nose,
-    IDX.leftShoulder,
-    IDX.rightShoulder,
-    IDX.leftElbow,
-    IDX.rightElbow,
-    IDX.leftWrist,
-    IDX.rightWrist,
-    IDX.leftHip,
-    IDX.rightHip,
-  ];
-  if (required.some((i) => !raw[i])) return null;
+  const allIndices = Object.values(IDX);
+  if (allIndices.some((i) => !raw[i])) return null;
 
   return {
     nose: mirror(raw[IDX.nose]),
+    leftEar: mirror(raw[IDX.leftEar]),
+    rightEar: mirror(raw[IDX.rightEar]),
     leftShoulder: mirror(raw[IDX.leftShoulder]),
     rightShoulder: mirror(raw[IDX.rightShoulder]),
     leftElbow: mirror(raw[IDX.leftElbow]),
@@ -62,5 +66,13 @@ export function convertLandmarks(raw: RawLandmark[] | undefined): FrameLandmarks
     rightWrist: mirror(raw[IDX.rightWrist]),
     leftHip: mirror(raw[IDX.leftHip]),
     rightHip: mirror(raw[IDX.rightHip]),
+    leftKnee: mirror(raw[IDX.leftKnee]),
+    rightKnee: mirror(raw[IDX.rightKnee]),
+    leftAnkle: mirror(raw[IDX.leftAnkle]),
+    rightAnkle: mirror(raw[IDX.rightAnkle]),
+    leftHeel: mirror(raw[IDX.leftHeel]),
+    rightHeel: mirror(raw[IDX.rightHeel]),
+    leftFootIndex: mirror(raw[IDX.leftFootIndex]),
+    rightFootIndex: mirror(raw[IDX.rightFootIndex]),
   };
 }
