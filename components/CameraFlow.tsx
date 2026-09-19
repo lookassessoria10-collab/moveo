@@ -127,7 +127,10 @@ export function CameraFlow() {
         const neutral = item.side === "right" ? baseline.neutralArmAngleRight : baseline.neutralArmAngleLeft;
         machineRef.current.arm(neutral);
         armedRef.current = true;
-        speech.speak("Pode começar.", { force: true });
+        speech.speak(
+          `Vamos começar. ${MOVEMENT_INSTRUCTION[item.movement](SIDE_LABEL[item.side])}`,
+          { force: true }
+        );
       }
     };
     const initialTimer = setTimeout(tick, 1000);
@@ -324,11 +327,12 @@ export function CameraFlow() {
       } else {
         armedRef.current = false;
         setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "Muito bem. Volte à posição inicial." }));
-        speech.speak("Muito bem.", { force: true });
+        speech.speak("Muito bem. Volte à posição inicial.", { force: true });
         reArmTimerRef.current = setTimeout(() => {
           machineRef.current.arm(neutral);
           armedRef.current = true;
           setTestUi((u) => ({ ...u, message: "" }));
+          speech.speak("Pode começar.", { force: true });
         }, 1600);
       }
     } else {
