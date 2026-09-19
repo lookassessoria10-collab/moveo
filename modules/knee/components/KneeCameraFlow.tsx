@@ -14,7 +14,7 @@ import { KNEE_CONFIG } from "@/config/modules/knee";
 import { calculateKneeAngle, kneeFlexionFromRawAngle } from "../angles";
 import { useKneeStore, KNEE_QUEUE, KneeQueueItem } from "../store";
 import { KneeAttempt, KneeMovementFrame, Side } from "../types";
-import { drawPoseOverlay } from "@/components/PoseOverlay";
+import { drawLegOverlay } from "@/components/PoseOverlay";
 import { PainQuestionScreen } from "./screens/PainQuestionScreen";
 import { Button } from "@/components/ui/Button";
 
@@ -384,8 +384,10 @@ export function KneeCameraFlow() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!landmarks) return;
-    drawPoseOverlay(ctx, landmarks, canvas.width, canvas.height, {});
+    if (!landmarks || !item) return;
+    const highlightSide =
+      item.test === "squat" ? "both" : item.test === "flexion" ? (item.side as Side) : trackedSideRef.current;
+    drawLegOverlay(ctx, landmarks, canvas.width, canvas.height, { highlightSide });
   };
 
   usePoseLandmarker(videoRef, (lm) => handleFrame(lm), camera.status === "ready");

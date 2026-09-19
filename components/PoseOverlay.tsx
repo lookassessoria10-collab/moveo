@@ -80,3 +80,51 @@ export function drawPoseOverlay(
     ctx.stroke();
   }
 }
+
+interface LegDrawOptions {
+  /** Qual(is) perna(s) destacar: "right"/"left" para testes por lado, "both" para o agachamento. */
+  highlightSide?: "right" | "left" | "both" | null;
+}
+
+/**
+ * Overlay para o módulo de Joelho: desenha quadril→joelho→tornozelo (a
+ * perna, não o tronco). Usado no lugar de drawPoseOverlay() porque este
+ * último sempre desenha o retângulo ombro-quadril, que visualmente parece
+ * um overlay de tronco mesmo durante um teste de joelho.
+ */
+export function drawLegOverlay(
+  ctx: CanvasRenderingContext2D,
+  landmarks: FrameLandmarks,
+  width: number,
+  height: number,
+  options: LegDrawOptions = {}
+) {
+  const px = (p: { x: number; y: number }) => ({ x: p.x * width, y: p.y * height });
+
+  const rs = px(landmarks.rightShoulder);
+  const ls = px(landmarks.leftShoulder);
+  const rh = px(landmarks.rightHip);
+  const lh = px(landmarks.leftHip);
+  const rk = px(landmarks.rightKnee);
+  const lk = px(landmarks.leftKnee);
+  const ra = px(landmarks.rightAnkle);
+  const la = px(landmarks.leftAnkle);
+
+  // linha de tronco discreta, apenas para dar contexto de orientação
+  const shoulderMid = { x: (rs.x + ls.x) / 2, y: (rs.y + ls.y) / 2 };
+  const hipMid = { x: (rh.x + lh.x) / 2, y: (rh.y + lh.y) / 2 };
+  line(ctx, shoulderMid, hipMid, "rgba(255,255,255,0.35)", 2);
+  line(ctx, lh, rh, "rgba(255,255,255,0.35)", 2);
+
+  const rightActive = options.highlightSide === "right" || options.highlightSide === "both";
+  const leftActive = options.highlightSide === "left" || options.highlightSide === "both";
+
+  line(ctx, rh, rk, rightActive ? RIGHT_COLOR : LINE_COLOR, rightActive ? 5 : 3);
+  line(ctx, rk, ra, rightActive ? RIGHT_COLOR : LINE_COLOR, rightActive ? 5 : 3);
+  line(ctx, lh, lk, leftActive ? LEFT_COLOR : LINE_COLOR, leftActive ? 5 : 3);
+  line(ctx, lk, la, leftActive ? LEFT_COLOR : LINE_COLOR, leftActive ? 5 : 3);
+
+  for (const p of [rh, rk, ra, lh, lk, la]) {
+    dot(ctx, p.x, p.y, DOT_COLOR, rightActive || leftActive ? 6 : 5);
+  }
+}
