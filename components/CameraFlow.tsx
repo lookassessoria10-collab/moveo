@@ -57,6 +57,12 @@ export function CameraFlow() {
     key: "no_body",
     message: "Procurando você...",
   });
+  // Proporção real do stream da câmera (ex.: 3/4, 9/16...) — descoberta só
+  // depois que o vídeo carrega os metadados. Até lá usamos um palpite
+  // razoável de celular em retrato. Sem isso, forçar uma proporção fixa
+  // no container obriga a usar object-fit: cover, que corta as bordas do
+  // vídeo (efeito de "zoom") em vez de mostrar a imagem inteira.
+  const [videoAspect, setVideoAspect] = useState<number | null>(null);
   const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [testUi, setTestUi] = useState<{
     repIndex: number;
@@ -371,7 +377,7 @@ export function CameraFlow() {
       <div
         className="relative mx-auto w-full flex-1 overflow-hidden bg-black"
         style={{
-          aspectRatio: "9 / 16",
+          aspectRatio: videoAspect ? `${videoAspect}` : "9 / 16",
           maxHeight: "100dvh",
         }}
       >
@@ -379,10 +385,14 @@ export function CameraFlow() {
           ref={videoRef}
           playsInline
           muted
-          className="absolute inset-0 h-full w-full object-cover"
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
+            if (v.videoWidth && v.videoHeight) setVideoAspect(v.videoWidth / v.videoHeight);
+          }}
+          className="absolute inset-0 h-full w-full object-contain"
           style={{ transform: "scaleX(-1)" }}
         />
-        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
 
         {(screen === "camera" || screen === "positioning") && (
           <>

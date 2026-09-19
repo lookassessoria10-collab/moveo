@@ -51,6 +51,9 @@ export function KneeCameraFlow() {
 
   const [positioningOk, setPositioningOk] = useState(false);
   const [positioningMsg, setPositioningMsg] = useState("Procurando você...");
+  // Proporção real do stream da câmera — ver comentário equivalente em
+  // components/CameraFlow.tsx.
+  const [videoAspect, setVideoAspect] = useState<number | null>(null);
   const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [testUi, setTestUi] = useState<{
     repIndex: number;
@@ -472,16 +475,20 @@ export function KneeCameraFlow() {
     <div className="relative flex min-h-dvh w-full flex-col bg-black">
       <div
         className="relative mx-auto w-full flex-1 overflow-hidden bg-black"
-        style={{ aspectRatio: "9 / 16", maxHeight: "100dvh" }}
+        style={{ aspectRatio: videoAspect ? `${videoAspect}` : "9 / 16", maxHeight: "100dvh" }}
       >
         <video
           ref={videoRef}
           playsInline
           muted
-          className="absolute inset-0 h-full w-full object-cover"
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
+            if (v.videoWidth && v.videoHeight) setVideoAspect(v.videoWidth / v.videoHeight);
+          }}
+          className="absolute inset-0 h-full w-full object-contain"
           style={{ transform: "scaleX(-1)" }}
         />
-        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
 
         {(screen === "camera") && (
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
