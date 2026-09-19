@@ -31,10 +31,19 @@ export const SPINE_CONFIG = {
       minimalMaxDeg: 4,
       moderateMaxDeg: 10,
     },
-    landmarkVisibilityMin: 0.5,
+    landmarkVisibilityMin: 0.55,
     // Diferença de altura entre ombros/quadril considerada digna de nota na
     // postura estática — apenas descritivo, nunca diagnóstico.
     postureNotableTiltDeg: 3,
+    // Enquadramento/distância — ver lib/framing.ts. Proporções relativas
+    // ao frame (0 a 1), não metros reais. A coluna só precisa do tronco
+    // (nariz até quadril) bem enquadrado, não do corpo inteiro.
+    framing: {
+      minSpanRatio: 0.32,
+      maxSpanRatio: 0.75,
+      orientationLateralMaxRatio: 0.55,
+      orientationFrontalMinRatio: 0.3,
+    },
   },
   copy: {
     disclaimerFinal:

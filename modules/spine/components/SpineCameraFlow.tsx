@@ -9,6 +9,7 @@ import { distance, midpoint } from "@/lib/geometry";
 import { MovementStateMachine } from "@/lib/movementDetection";
 import { MovingAverage } from "@/lib/smoothing";
 import { calculateAngularVelocity, calculateMovementDuration } from "@/lib/movementMetrics";
+import { checkOrientation, checkVerticalFraming } from "@/lib/framing";
 import { SPINE_CONFIG } from "@/config/modules/spine";
 import { tiltFromHorizontal } from "../angles";
 import { useSpineStore, SPINE_QUEUE, SpineQueueItem } from "../store";
@@ -130,13 +131,37 @@ export function SpineCameraFlow() {
     return { ok: true, message: "Perfeito! Posição ideal." };
   };
 
+  /**
+   * Checagem mais rigorosa usada só na tela de posicionamento: além da
+   * visibilidade, verifica orientação (de lado/de frente) e enquadramento
+   * vertical do tronco (nariz até quadril) — evita começar o teste com o
+   * corpo mal enquadrado, principal causa de estimativas instáveis.
+   */
+  const checkPositioningQuality = (landmarks: FrameLandmarks | null): { ok: boolean; message: string } => {
+    const base = checkQuality(landmarks);
+    if (!base.ok || !landmarks || !item) return base;
+
+    const shoulderMid = midpoint(landmarks.leftShoulder, landmarks.rightShoulder);
+    const hipMid = midpoint(landmarks.leftHip, landmarks.rightHip);
+    const orientation = checkOrientation(landmarks.leftShoulder, landmarks.rightShoulder, shoulderMid, hipMid, item.orientation, {
+      lateralMaxRatio: SPINE_CONFIG.thresholds.framing.orientationLateralMaxRatio,
+      frontalMinRatio: SPINE_CONFIG.thresholds.framing.orientationFrontalMinRatio,
+    });
+    if (!orientation.ok) return orientation;
+
+    return checkVerticalFraming(landmarks.nose, hipMid, {
+      minSpanRatio: SPINE_CONFIG.thresholds.framing.minSpanRatio,
+      maxSpanRatio: SPINE_CONFIG.thresholds.framing.maxSpanRatio,
+    });
+  };
+
   const handleFrame = (landmarks: FrameLandmarks | null) => {
     const timestamp = performance.now();
     const currentScreen = useSpineStore.getState().screen;
     drawFrame(landmarks);
 
     if (currentScreen === "positioning") {
-      const check = checkQuality(landmarks);
+      const check = checkPositioningQuality(landmarks);
       setPositioningOk(check.ok);
       setPositioningMsg(check.message);
       speech.speak(check.message);

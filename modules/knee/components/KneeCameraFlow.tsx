@@ -10,6 +10,7 @@ import { MovementStateMachine } from "@/lib/movementDetection";
 import { MovingAverage } from "@/lib/smoothing";
 import { calculateAngularVelocity, calculateMovementDuration } from "@/lib/movementMetrics";
 import { calculateMaxTrunkCompensation } from "@/lib/trunkCompensation";
+import { checkOrientation, checkVerticalFraming } from "@/lib/framing";
 import { KNEE_CONFIG } from "@/config/modules/knee";
 import { calculateKneeAngle, kneeFlexionFromRawAngle } from "../angles";
 import { useKneeStore, KNEE_QUEUE, KneeQueueItem } from "../store";
@@ -195,6 +196,55 @@ export function KneeCameraFlow() {
     return { ok: true, message: "Perfeito! Posição ideal." };
   };
 
+  /**
+   * Checagem mais rigorosa usada só na tela de posicionamento (antes de
+   * calibrar): além da visibilidade dos landmarks, verifica orientação
+   * (de lado/de frente) e distância aproximada da câmera. Evita que o
+   * teste comece com o corpo mal enquadrado, que é a causa mais comum de
+   * o MediaPipe "alucinar" a posição de joelho/tornozelo fora do quadro.
+   */
+  const checkPositioningQuality = (landmarks: FrameLandmarks | null): { ok: boolean; message: string } => {
+    const base = checkQuality(landmarks);
+    if (!base.ok || !landmarks || !item) return base;
+
+    const shoulderMid = midpoint(landmarks.leftShoulder, landmarks.rightShoulder);
+    const hipMid = midpoint(landmarks.leftHip, landmarks.rightHip);
+    const orientation = checkOrientation(
+      landmarks.leftShoulder,
+      landmarks.rightShoulder,
+      shoulderMid,
+      hipMid,
+      item.orientation,
+      {
+        lateralMaxRatio: KNEE_CONFIG.thresholds.framing.orientationLateralMaxRatio,
+        frontalMinRatio: KNEE_CONFIG.thresholds.framing.orientationFrontalMinRatio,
+      }
+    );
+    if (!orientation.ok) return orientation;
+
+    if (item.test === "squat") {
+      const lowestAnkleY = Math.max(landmarks.leftAnkle.y, landmarks.rightAnkle.y);
+      const framing = checkVerticalFraming(
+        landmarks.nose,
+        { x: 0, y: lowestAnkleY },
+        {
+          minSpanRatio: KNEE_CONFIG.thresholds.framing.frontalMinSpanRatio,
+          maxSpanRatio: KNEE_CONFIG.thresholds.framing.frontalMaxSpanRatio,
+        }
+      );
+      return framing;
+    }
+
+    const side = item.test === "flexion" ? (item.side as Side) : trackedSideRef.current;
+    const topPoint = side === "right" ? landmarks.rightShoulder : landmarks.leftShoulder;
+    const ankle = side === "right" ? landmarks.rightAnkle : landmarks.leftAnkle;
+    const framing = checkVerticalFraming(topPoint, ankle, {
+      minSpanRatio: KNEE_CONFIG.thresholds.framing.lateralMinSpanRatio,
+      maxSpanRatio: KNEE_CONFIG.thresholds.framing.lateralMaxSpanRatio,
+    });
+    return framing;
+  };
+
   const handleFrame = (landmarks: FrameLandmarks | null) => {
     const timestamp = performance.now();
     const currentScreen = useKneeStore.getState().screen;
@@ -202,7 +252,7 @@ export function KneeCameraFlow() {
 
     if (currentScreen === "positioning") {
       if (landmarks) trackedSideRef.current = pickVisibleSide(landmarks);
-      const check = checkQuality(landmarks);
+      const check = checkPositioningQuality(landmarks);
       setPositioningOk(check.ok);
       setPositioningMsg(check.message);
       speech.speak(check.message);

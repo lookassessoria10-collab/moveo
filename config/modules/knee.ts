@@ -33,10 +33,24 @@ export const KNEE_CONFIG = {
       peakStableToleranceDeg: 3,
       returnToNeutralDeg: 15,
     },
-    landmarkVisibilityMin: 0.5,
+    // Um pouco mais exigente que o padrão (0.5) porque pernas em vista de
+    // perfil são mais sujeitas a estimativas ruidosas do MediaPipe.
+    landmarkVisibilityMin: 0.6,
     // Deslocamento lateral do quadril (relativo à largura do quadril)
     // considerado relevante no agachamento — puramente descritivo.
     hipShiftNotableRatio: 0.15,
+    // Enquadramento/distância — ver lib/framing.ts. Proporções relativas
+    // ao frame (0 a 1), não metros reais.
+    framing: {
+      // vista lateral (flexão, sentar/levantar): ombro até tornozelo
+      lateralMinSpanRatio: 0.55,
+      lateralMaxSpanRatio: 0.95,
+      // vista frontal (agachamento): cabeça até tornozelo
+      frontalMinSpanRatio: 0.6,
+      frontalMaxSpanRatio: 0.98,
+      orientationLateralMaxRatio: 0.55,
+      orientationFrontalMinRatio: 0.3,
+    },
   },
   copy: {
     disclaimerFinal:
