@@ -17,6 +17,8 @@ import { KneeAttempt, KneeMovementFrame, Side } from "../types";
 import { drawLegOverlay } from "@/components/PoseOverlay";
 import { PainQuestionScreen } from "./screens/PainQuestionScreen";
 import { Button } from "@/components/ui/Button";
+import { useSpeech } from "@/lib/useSpeech";
+import { SoundToggle } from "@/components/shared/SoundToggle";
 
 const REPS = KNEE_CONFIG.protocol.repetitionsPerMovement;
 const CALIBRATION_MS = KNEE_CONFIG.protocol.calibrationDurationMs;
@@ -37,6 +39,7 @@ export function KneeCameraFlow() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const camera = useCamera(videoRef);
+  const speech = useSpeech();
 
   const screen = useKneeStore((s) => s.screen);
   const debugMode = useKneeStore((s) => s.debugMode);
@@ -75,6 +78,7 @@ export function KneeCameraFlow() {
   const armedRef = useRef(false);
   const reArmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handsNearHipRef = useRef(false);
+  const calibrationSpokenRef = useRef(false);
 
   useEffect(() => {
     if (screen === "camera") camera.start();
@@ -86,6 +90,13 @@ export function KneeCameraFlow() {
       useKneeStore.getState().setScreen("reposition");
     }
   }, [screen, camera.status]);
+
+  useEffect(() => {
+    if (screen === "reposition" && item) {
+      speech.speak(item.repositionInstruction, { force: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, queueIndex]);
 
   // (re)inicia bloco de teste ao entrar em "test"
   useEffect(() => {
@@ -131,6 +142,7 @@ export function KneeCameraFlow() {
         neutralSignalRef.current = neutralSignal();
         machineRef.current.arm(neutralSignalRef.current);
         armedRef.current = true;
+        speech.speak("Pode começar.", { force: true });
       }
     };
     const initialTimer = setTimeout(tick, 1000);
@@ -193,6 +205,7 @@ export function KneeCameraFlow() {
       const check = checkQuality(landmarks);
       setPositioningOk(check.ok);
       setPositioningMsg(check.message);
+      speech.speak(check.message);
       if (check.ok) {
         if (holdStartRef.current === null) holdStartRef.current = timestamp;
         if (timestamp - holdStartRef.current >= 1000) {
@@ -213,6 +226,10 @@ export function KneeCameraFlow() {
         return;
       }
       if (calibrationStartRef.current === null) calibrationStartRef.current = timestamp;
+      if (!calibrationSpokenRef.current) {
+        calibrationSpokenRef.current = true;
+        speech.speak(item.calibrationInstruction, { force: true });
+      }
 
       const trunkAngle = calculateTrunkAngle(
         landmarks.leftShoulder,
@@ -243,6 +260,7 @@ export function KneeCameraFlow() {
         });
         calibrationStartRef.current = null;
         calibrationSamplesRef.current = [];
+        calibrationSpokenRef.current = false;
         useKneeStore.getState().setScreen("test");
       }
       return;
@@ -260,7 +278,9 @@ export function KneeCameraFlow() {
     if (!check.ok || !landmarks) {
       lostCountRef.current += 1;
       if (lostCountRef.current > 8 && !testUi.lost) {
-        setTestUi((u) => ({ ...u, lost: true, message: "Perdi a referência do seu movimento. Volte à posição indicada." }));
+        const lostMessage = "Perdi a referência do seu movimento. Volte à posição indicada.";
+        setTestUi((u) => ({ ...u, lost: true, message: lostMessage }));
+        speech.speak(lostMessage, { force: true });
         machineRef.current.reset();
         framesBufferRef.current = [];
         capturingRef.current = false;
@@ -331,7 +351,10 @@ export function KneeCameraFlow() {
       });
     }
 
-    if (detection.justReachedPeak) peakTsRef.current = timestamp;
+    if (detection.justReachedPeak) {
+      peakTsRef.current = timestamp;
+      speech.speak("Pode voltar.", { force: true });
+    }
 
     if (detection.justCompleted) {
       capturingRef.current = false;
@@ -362,6 +385,7 @@ export function KneeCameraFlow() {
       } else {
         armedRef.current = false;
         setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "Muito bem. Volte à posição inicial." }));
+        speech.speak("Muito bem.", { force: true });
         reArmTimerRef.current = setTimeout(() => {
           machineRef.current.arm(neutralSignalRef.current);
           armedRef.current = true;
@@ -504,6 +528,7 @@ export function KneeCameraFlow() {
         >
           debug
         </button>
+        {speech.supported && <SoundToggle enabled={speech.enabled} onToggle={speech.toggle} />}
       </div>
 
       {(camera.status === "denied" || camera.status === "unavailable") && (

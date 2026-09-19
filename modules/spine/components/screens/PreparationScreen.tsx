@@ -2,6 +2,7 @@
 
 import { ScreenShell } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { warmUpSpeech } from "@/lib/useSpeech";
 import { useSpineStore } from "../../store";
 
 const TIPS = [
@@ -31,7 +32,13 @@ export function PreparationScreen() {
           ))}
         </ul>
       </div>
-      <Button className="mt-8" onClick={() => setScreen("camera")}>
+      <Button
+        className="mt-8"
+        onClick={() => {
+          warmUpSpeech();
+          setScreen("camera");
+        }}
+      >
         ABRIR CÂMERA
       </Button>
     </ScreenShell>

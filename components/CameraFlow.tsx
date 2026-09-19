@@ -23,6 +23,8 @@ import { BodyPositionGuide } from "./BodyPositionGuide";
 import { Button } from "./ui/Button";
 import { APP_CONFIG } from "@/config/app";
 import { PainQuestionScreen } from "./screens/PainQuestionScreen";
+import { useSpeech } from "@/lib/useSpeech";
+import { SoundToggle } from "./shared/SoundToggle";
 
 const MOVEMENT_TITLE: Record<Movement, string> = {
   flexion: "Flexão",
@@ -42,6 +44,7 @@ export function CameraFlow() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const camera = useCamera(videoRef);
+  const speech = useSpeech();
 
   const screen = useAssessmentStore((s) => s.screen);
   const debugMode = useAssessmentStore((s) => s.debugMode);
@@ -81,6 +84,7 @@ export function CameraFlow() {
   const armedRef = useRef(false);
   const reArmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLandmarksRef = useRef<FrameLandmarks | null>(null);
+  const calibrationSpokenRef = useRef(false);
 
   // inicia câmera assim que a tela "camera" é exibida
   useEffect(() => {
@@ -123,6 +127,7 @@ export function CameraFlow() {
         const neutral = item.side === "right" ? baseline.neutralArmAngleRight : baseline.neutralArmAngleLeft;
         machineRef.current.arm(neutral);
         armedRef.current = true;
+        speech.speak("Pode começar.", { force: true });
       }
     };
     const initialTimer = setTimeout(tick, 1000);
@@ -144,6 +149,7 @@ export function CameraFlow() {
     if (currentScreen === "positioning") {
       const check = checkPositioning(landmarks, 1);
       setPositioning(check);
+      speech.speak(check.message);
       if (check.ok) {
         if (holdStartRef.current === null) holdStartRef.current = timestamp;
         if (timestamp - holdStartRef.current >= 1000) {
@@ -164,6 +170,10 @@ export function CameraFlow() {
         return;
       }
       if (calibrationStartRef.current === null) calibrationStartRef.current = timestamp;
+      if (!calibrationSpokenRef.current) {
+        calibrationSpokenRef.current = true;
+        speech.speak("Fique parado por um instante.", { force: true });
+      }
 
       const trunkAngle = calculateTrunkAngle(
         landmarks.leftShoulder,
@@ -199,6 +209,7 @@ export function CameraFlow() {
         });
         calibrationStartRef.current = null;
         calibrationSamplesRef.current = [];
+        calibrationSpokenRef.current = false;
         useAssessmentStore.getState().setScreen("test");
       }
       return;
@@ -224,7 +235,9 @@ export function CameraFlow() {
     if (!requiredOk) {
       lostCountRef.current += 1;
       if (lostCountRef.current > 8 && !testUi.lost) {
-        setTestUi((u) => ({ ...u, lost: true, message: "Perdi a referência do seu braço. Volte à posição indicada." }));
+        const lostMessage = "Perdi a referência do seu braço. Volte à posição indicada.";
+        setTestUi((u) => ({ ...u, lost: true, message: lostMessage }));
+        speech.speak(lostMessage, { force: true });
         // reinicia a repetição atual para não misturar dados incompletos
         machineRef.current.reset();
         framesBufferRef.current = [];
@@ -278,6 +291,7 @@ export function CameraFlow() {
 
     if (detection.justReachedPeak) {
       peakTsRef.current = timestamp;
+      speech.speak("Pode voltar.", { force: true });
     }
 
     if (detection.justCompleted) {
@@ -310,6 +324,7 @@ export function CameraFlow() {
       } else {
         armedRef.current = false;
         setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "Muito bem. Volte à posição inicial." }));
+        speech.speak("Muito bem.", { force: true });
         reArmTimerRef.current = setTimeout(() => {
           machineRef.current.arm(neutral);
           armedRef.current = true;
@@ -444,6 +459,7 @@ export function CameraFlow() {
         >
           debug
         </button>
+        {speech.supported && <SoundToggle enabled={speech.enabled} onToggle={speech.toggle} />}
       </div>
 
       {(camera.status === "denied" || camera.status === "unavailable") && (

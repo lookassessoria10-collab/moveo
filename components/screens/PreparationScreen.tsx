@@ -3,6 +3,7 @@
 import { ScreenShell } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { useAssessmentStore } from "@/stores/assessmentStore";
+import { warmUpSpeech } from "@/lib/useSpeech";
 
 const TIPS = [
   "Coloque o celular apoiado",
@@ -34,7 +35,13 @@ export function PreparationScreen() {
           ))}
         </ul>
       </div>
-      <Button className="mt-8" onClick={() => setScreen("camera")}>
+      <Button
+        className="mt-8"
+        onClick={() => {
+          warmUpSpeech();
+          setScreen("camera");
+        }}
+      >
         ABRIR CÂMERA
       </Button>
     </ScreenShell>
