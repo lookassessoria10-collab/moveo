@@ -128,3 +128,35 @@ export function drawLegOverlay(
     dot(ctx, p.x, p.y, DOT_COLOR, rightActive || leftActive ? 10 : 8);
   }
 }
+
+interface PostureDrawOptions {
+  side: "right" | "left";
+}
+
+/**
+ * Overlay para o módulo de Postura sentada: desenha apenas o lado do corpo
+ * exposto à câmera na vista lateral (quadril→ombro→orelha), já que o outro
+ * lado fica parcialmente oculto e desenhá-lo produziria linhas cruzadas
+ * confusas. Usado no lugar de drawPoseOverlay()/drawLegOverlay().
+ */
+export function drawPostureOverlay(
+  ctx: CanvasRenderingContext2D,
+  landmarks: FrameLandmarks,
+  width: number,
+  height: number,
+  options: PostureDrawOptions
+) {
+  const px = (p: { x: number; y: number }) => ({ x: p.x * width, y: p.y * height });
+
+  const ear = px(options.side === "right" ? landmarks.rightEar : landmarks.leftEar);
+  const shoulder = px(options.side === "right" ? landmarks.rightShoulder : landmarks.leftShoulder);
+  const hip = px(options.side === "right" ? landmarks.rightHip : landmarks.leftHip);
+  const accent = options.side === "right" ? RIGHT_COLOR : LEFT_COLOR;
+
+  line(ctx, hip, shoulder, LINE_COLOR, 7);
+  line(ctx, shoulder, ear, accent, 8);
+
+  for (const p of [ear, shoulder, hip]) {
+    dot(ctx, p.x, p.y, DOT_COLOR, 9);
+  }
+}

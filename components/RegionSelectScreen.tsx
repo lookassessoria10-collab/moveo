@@ -56,6 +56,21 @@ function SpineIcon({ color }: { color: string }) {
   );
 }
 
+function PostureIcon({ color }: { color: string }) {
+  return (
+    <svg viewBox="0 0 48 48" className="h-10 w-10" fill="none">
+      <circle cx="30" cy="8" r="5" stroke={color} strokeWidth="2.5" />
+      <path
+        d="M28 13v9l6 4v14M28 22h-6v18M16 44h18"
+        stroke={color}
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function RegionSelectScreen() {
   const cards: RegionCard[] = [
     {
@@ -78,6 +93,13 @@ export function RegionSelectScreen() {
       description: "Observe mobilidade, inclinações e assimetrias durante movimentos do tronco.",
       accent: APP_CONFIG.colors.warn,
       icon: <SpineIcon color={APP_CONFIG.colors.warn} />,
+    },
+    {
+      href: "/assessment/posture",
+      title: "POSTURA SENTADA",
+      description: "Observe sua postura sentada no trabalho — ferramenta de conscientização ergonômica.",
+      accent: APP_CONFIG.colors.posture,
+      icon: <PostureIcon color={APP_CONFIG.colors.posture} />,
     },
   ];
 

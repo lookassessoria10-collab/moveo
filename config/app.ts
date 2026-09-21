@@ -21,6 +21,7 @@ export const APP_CONFIG = {
     left: "#12A594",
     warn: "#E6A62B",
     danger: "#E14B4B",
+    posture: "#7C5CFC",
   },
 
   // Texto institucional exibido em telas de abertura / rodapé
