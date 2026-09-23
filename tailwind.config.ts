@@ -8,19 +8,20 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Paleta adaptada da identidade visual da UORT (teal + navy).
         moveo: {
-          bg: "#F7F8FA",
+          bg: "#F5FBFB",
           card: "#FFFFFF",
-          ink: "#1C2333",
-          muted: "#6B7280",
-          border: "#E5E8EF",
-          primary: "#2B5CE6",
-          primaryDark: "#1E44B8",
-          primarySoft: "#EAF0FF",
-          right: "#2B5CE6",
-          left: "#12A594",
-          warn: "#E6A62B",
-          danger: "#E14B4B",
+          ink: "#10222B",
+          muted: "#5B6E73",
+          border: "#DCEAEB",
+          primary: "#128C90",
+          primaryDark: "#0B6367",
+          primarySoft: "#E7F5F5",
+          right: "#128C90",
+          left: "#1B3A4B",
+          warn: "#D9A441",
+          danger: "#D64545",
         },
       },
       borderRadius: {

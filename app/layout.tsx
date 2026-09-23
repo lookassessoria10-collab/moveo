@@ -3,8 +3,9 @@ import "./globals.css";
 import { APP_CONFIG } from "@/config/app";
 
 export const metadata: Metadata = {
-  title: `${APP_CONFIG.name} — Avaliação funcional do ombro`,
+  title: `${APP_CONFIG.name} — Análise de Movimento`,
   description: APP_CONFIG.tagline,
+  icons: { icon: "/brand/uort-mark.jpg" },
 };
 
 export const viewport: Viewport = {

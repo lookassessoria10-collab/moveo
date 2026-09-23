@@ -1,32 +1,42 @@
 /**
  * Configuração central da plataforma (nome, marca, cores, CTA, textos
- * institucionais). Válida para todas as regiões (ombro, joelho, coluna).
+ * institucionais). Válida para todas as regiões (ombro, joelho, coluna,
+ * postura).
+ *
+ * Identidade visual adaptada para a UORT (Unidade Ortopédica
+ * Traumatológica) a partir dos materiais de marca fornecidos: paleta
+ * teal + navy e logo em public/brand/.
  *
  * O bloco `protocol` e `thresholds` abaixo é específico do módulo OMBRO
  * (mantido aqui por compatibilidade com o código já existente). Os módulos
- * de joelho e coluna têm sua própria configuração em
- * config/modules/knee.ts e config/modules/spine.ts.
+ * de joelho, coluna e postura têm sua própria configuração em
+ * config/modules/knee.ts, config/modules/spine.ts e config/modules/posture.ts.
  */
 
-export const APP_NAME = "MOVEO";
+export const APP_NAME = "UORT";
 
 export const APP_CONFIG = {
   name: APP_NAME,
-  tagline: "Plataforma de avaliação funcional por câmera",
-  logo: null as string | null, // caminho para logo, se houver
+  tagline: "Análise de Movimento UORT",
+  logo: "/brand/uort-logo.jpg" as string | null, // wordmark em fundo claro — ver public/brand/
   colors: {
-    primary: "#2B5CE6",
-    primaryDark: "#1E44B8",
-    right: "#2B5CE6",
-    left: "#12A594",
-    warn: "#E6A62B",
-    danger: "#E14B4B",
-    posture: "#7C5CFC",
+    primary: "#128C90",
+    primaryDark: "#0B6367",
+    // Ritmo de duas cores do próprio material de marca da UORT (teal +
+    // navy lado a lado nos títulos) — usado para diferenciar lado
+    // direito/esquerdo nos gráficos comparativos.
+    right: "#128C90",
+    left: "#1B3A4B",
+    warn: "#D9A441",
+    danger: "#D64545",
+    // Tom intermediário entre o teal e o navy — só para diferenciar o card
+    // de POSTURA dos demais na tela inicial (JOELHO já usa `left`/navy).
+    posture: "#3E6E86",
   },
 
   // Texto institucional exibido em telas de abertura / rodapé
   institutionalText:
-    "Ferramenta de acompanhamento funcional do movimento por câmera.",
+    "Ferramenta de análise de movimento por câmera da UORT — Unidade Ortopédica Traumatológica.",
 
   // Chamada para ação configurável ao final do relatório
   cta: {

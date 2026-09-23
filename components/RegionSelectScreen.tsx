@@ -105,11 +105,18 @@ export function RegionSelectScreen() {
 
   return (
     <ScreenShell>
-      <div className="mb-2 flex items-center gap-2">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-moveo-primary text-lg font-bold text-white">
-          {APP_CONFIG.name.slice(0, 1)}
-        </div>
-        <span className="text-lg font-bold tracking-tight">{APP_CONFIG.name}</span>
+      <div className="mb-2 flex items-center">
+        {APP_CONFIG.logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={APP_CONFIG.logo} alt={APP_CONFIG.name} className="h-11 w-auto" />
+        ) : (
+          <div className="flex items-center gap-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-moveo-primary text-lg font-bold text-white">
+              {APP_CONFIG.name.slice(0, 1)}
+            </div>
+            <span className="text-lg font-bold tracking-tight">{APP_CONFIG.name}</span>
+          </div>
+        )}
       </div>
 
       <h1 className="mt-4 text-3xl font-bold leading-tight text-moveo-ink">Avalie seu movimento</h1>

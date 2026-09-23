@@ -1,4 +1,4 @@
-# MOVEO — Plataforma de avaliação funcional por câmera
+# UORT — Análise de Movimento por câmera
 
 Aplicação web mobile-first que usa apenas a câmera do celular (via
 MediaPipe Pose Landmarker, rodando inteiramente no navegador) para medir
@@ -10,7 +10,7 @@ repetições e alinhamento observado.
 identifica gravidade anatômica e não substitui avaliação profissional. Ela
 descreve apenas o movimento observado durante o teste.
 
-Três regiões estão disponíveis hoje, cada uma como um módulo independente
+Quatro regiões estão disponíveis hoje, cada uma como um módulo independente
 sobre a mesma infraestrutura de câmera/visão computacional:
 
 | Região | Rota | Testes |
@@ -18,8 +18,9 @@ sobre a mesma infraestrutura de câmera/visão computacional:
 | Ombro | `/assessment/shoulder` | Flexão, abdução (por lado, 3 reps) |
 | Joelho | `/assessment/knee` | Flexão/extensão (por lado), agachamento, sentar e levantar |
 | Coluna | `/assessment/spine` | Flexão anterior, inclinação lateral (dir./esq.), extensão confortável |
+| Postura sentada | `/assessment/posture` | Captura única (tronco/pescoço), voltada para uso corporativo/ergonômico |
 
-O nome do produto ("MOVEO") e todos os textos, cores, CTA e limites
+O nome do produto ("UORT") e todos os textos, cores, CTA e limites
 experimentais da plataforma ficam centralizados em
 [`config/app.ts`](config/app.ts); cada módulo tem sua própria configuração
 em `config/modules/<região>.ts`.
