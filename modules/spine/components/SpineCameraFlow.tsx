@@ -19,6 +19,7 @@ import { PainQuestionScreen } from "./screens/PainQuestionScreen";
 import { Button } from "@/components/ui/Button";
 import { useSpeech } from "@/lib/useSpeech";
 import { SoundToggle } from "@/components/shared/SoundToggle";
+import { CameraTopBar } from "@/components/shared/CameraTopBar";
 
 const REPS = SPINE_CONFIG.protocol.repetitionsPerMovement;
 const CALIBRATION_MS = SPINE_CONFIG.protocol.calibrationDurationMs;
@@ -360,11 +361,12 @@ export function SpineCameraFlow() {
   if (!item) return null;
 
   return (
-    <div className="relative flex min-h-dvh w-full flex-col bg-black">
+    <div className="relative flex min-h-dvh w-full flex-col bg-moveo-ink">
+      <CameraTopBar />
       {/* Proporção fixa em retrato — ver comentário em components/CameraFlow.tsx
           sobre por que não usamos video.videoWidth/videoHeight aqui. */}
       <div
-        className="relative mx-auto w-full flex-1 overflow-hidden bg-black"
+        className="relative mx-auto w-full flex-1 overflow-hidden bg-moveo-ink"
         style={{ aspectRatio: "9 / 16", maxHeight: "100dvh" }}
       >
         <video
@@ -377,7 +379,7 @@ export function SpineCameraFlow() {
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
 
         {screen === "camera" && (
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+          <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
             <p className="text-lg font-semibold text-white">
               {camera.status === "requesting" && "Solicitando acesso à câmera..."}
               {camera.status === "denied" && "Permita o acesso à câmera para continuar."}
@@ -400,18 +402,18 @@ export function SpineCameraFlow() {
         )}
 
         {screen === "positioning" && (
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+          <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
             <p className="text-lg font-semibold text-white">{positioningMsg}</p>
           </div>
         )}
 
         {screen === "calibration" && (
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+          <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
             <p className="text-lg font-semibold text-white">{item.calibrationInstruction}</p>
             <p className="mt-1 text-sm text-white/80">Estamos ajustando a medição ao seu corpo.</p>
-            <div className="mx-auto mt-4 h-2 w-48 overflow-hidden rounded-full bg-white/20">
+            <div className="mx-auto mt-4 h-2 w-48 overflow-hidden rounded-full bg-white/25">
               <div
-                className="h-full bg-moveo-primary transition-all"
+                className="h-full bg-white transition-all"
                 style={{ width: `${calibrationProgress * 100}%` }}
               />
             </div>
@@ -433,7 +435,7 @@ export function SpineCameraFlow() {
               </div>
             )}
 
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+            <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
               {testUi.angle !== null && testUi.countdown === null && !testUi.lost && (
                 <p className="mb-2 text-4xl font-bold text-white">{testUi.angle}°</p>
               )}

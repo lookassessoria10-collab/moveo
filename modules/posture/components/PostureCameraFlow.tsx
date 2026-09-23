@@ -15,6 +15,7 @@ import { drawPostureOverlay } from "@/components/PoseOverlay";
 import { Button } from "@/components/ui/Button";
 import { useSpeech } from "@/lib/useSpeech";
 import { SoundToggle } from "@/components/shared/SoundToggle";
+import { CameraTopBar } from "@/components/shared/CameraTopBar";
 
 const CAPTURE_MS = POSTURE_CONFIG.protocol.captureDurationMs;
 const VISIBILITY_MIN = POSTURE_CONFIG.thresholds.landmarkVisibilityMin;
@@ -208,11 +209,12 @@ export function PostureCameraFlow() {
   usePoseLandmarker(videoRef, (lm) => handleFrame(lm), camera.status === "ready");
 
   return (
-    <div className="relative flex min-h-dvh w-full flex-col bg-black">
+    <div className="relative flex min-h-dvh w-full flex-col bg-moveo-ink">
+      <CameraTopBar />
       {/* Proporção fixa em retrato — ver comentário em components/CameraFlow.tsx
           sobre por que não usamos video.videoWidth/videoHeight aqui. */}
       <div
-        className="relative mx-auto w-full flex-1 overflow-hidden bg-black"
+        className="relative mx-auto w-full flex-1 overflow-hidden bg-moveo-ink"
         style={{ aspectRatio: "9 / 16", maxHeight: "100dvh" }}
       >
         <video
@@ -225,7 +227,7 @@ export function PostureCameraFlow() {
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
 
         {screen === "camera" && (
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+          <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
             <p className="text-lg font-semibold text-white">
               {camera.status === "requesting" && "Solicitando acesso à câmera..."}
               {camera.status === "denied" && "Permita o acesso à câmera para continuar."}
@@ -251,18 +253,18 @@ export function PostureCameraFlow() {
         )}
 
         {screen === "positioning" && (
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+          <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
             <p className="text-lg font-semibold text-white">{positioningMsg}</p>
           </div>
         )}
 
         {screen === "capture" && (
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+          <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
             <p className="text-lg font-semibold text-white">Fique parado, na sua posição habitual.</p>
             <p className="mt-1 text-sm text-white/80">Não corrija a postura — queremos observar como ela é.</p>
-            <div className="mx-auto mt-4 h-2 w-48 overflow-hidden rounded-full bg-white/20">
+            <div className="mx-auto mt-4 h-2 w-48 overflow-hidden rounded-full bg-white/25">
               <div
-                className="h-full bg-moveo-primary transition-all"
+                className="h-full bg-white transition-all"
                 style={{ width: `${captureProgress * 100}%` }}
               />
             </div>

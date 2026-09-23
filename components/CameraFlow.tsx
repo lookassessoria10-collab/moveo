@@ -25,6 +25,7 @@ import { APP_CONFIG } from "@/config/app";
 import { PainQuestionScreen } from "./screens/PainQuestionScreen";
 import { useSpeech } from "@/lib/useSpeech";
 import { SoundToggle } from "./shared/SoundToggle";
+import { CameraTopBar } from "./shared/CameraTopBar";
 
 const MOVEMENT_TITLE: Record<Movement, string> = {
   flexion: "Flexão",
@@ -367,7 +368,8 @@ export function CameraFlow() {
   const item = TEST_QUEUE[queueIndex];
 
   return (
-    <div className="relative flex min-h-dvh w-full flex-col bg-black">
+    <div className="relative flex min-h-dvh w-full flex-col bg-moveo-ink">
+      <CameraTopBar />
       {/*
         Proporção fixa em retrato (9:16), não calculada a partir de
         video.videoWidth/videoHeight: no iPhone (e em alguns Android), essas
@@ -375,10 +377,14 @@ export function CameraFlow() {
         retrato, mesmo com o vídeo já aparecendo em pé na tela. Usar esses
         valores deixava a caixa "deitada" com tarjas pretas. object-fit:
         contain já resolve o corte/zoom original de forma robusta com
-        qualquer proporção real de vídeo, sem precisar desses metadados.
+        qualquer proporção real de vídeo, sem precisar desses metadados —
+        o que sobra dos dois lados (quando a proporção real da câmera não
+        bate 9:16) fica na cor da marca (bg-moveo-ink) em vez de preto, e a
+        barra de instrução inferior é opaca (bg-moveo-primary) por cima
+        dessa área, então nunca aparece como uma "tarja preta".
       */}
       <div
-        className="relative mx-auto w-full flex-1 overflow-hidden bg-black"
+        className="relative mx-auto w-full flex-1 overflow-hidden bg-moveo-ink"
         style={{
           aspectRatio: "9 / 16",
           maxHeight: "100dvh",
@@ -396,7 +402,7 @@ export function CameraFlow() {
         {(screen === "camera" || screen === "positioning") && (
           <>
             <BodyPositionGuide ok={positioning.ok} />
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+            <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
               <p className="text-lg font-semibold text-white">
                 {camera.status === "requesting" && "Solicitando acesso à câmera..."}
                 {camera.status === "denied" && "Permita o acesso à câmera para continuar."}
@@ -408,12 +414,12 @@ export function CameraFlow() {
         )}
 
         {screen === "calibration" && (
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+          <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
             <p className="text-lg font-semibold text-white">Fique parado por um instante.</p>
             <p className="mt-1 text-sm text-white/80">Estamos ajustando a medição ao seu corpo.</p>
-            <div className="mx-auto mt-4 h-2 w-48 overflow-hidden rounded-full bg-white/20">
+            <div className="mx-auto mt-4 h-2 w-48 overflow-hidden rounded-full bg-white/25">
               <div
-                className="h-full bg-moveo-primary transition-all"
+                className="h-full bg-white transition-all"
                 style={{ width: `${calibrationProgress * 100}%` }}
               />
             </div>
@@ -437,7 +443,7 @@ export function CameraFlow() {
               </div>
             )}
 
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-6 pb-10 text-center">
+            <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
               {testUi.angle !== null && testUi.countdown === null && !testUi.lost && (
                 <p className="mb-2 text-4xl font-bold text-white">{testUi.angle}°</p>
               )}
