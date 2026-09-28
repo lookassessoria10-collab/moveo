@@ -41,23 +41,59 @@
 export const ALGORITHM_VERSION = "2026.09-smoothing-v1";
 
 export const PRECISION_CONFIG = {
-  // Passo 2 — modo de validação com goniômetro.
-  validation: {},
+  // Passo 2 — modo de validação com goniômetro/inclinômetro.
+  validation: {
+    // Passo intermediário (antes do passo 4): gravação dos pontos do
+    // corpo quadro a quadro, ANTES da suavização — para reprocessar
+    // depois com qualquer versão do algoritmo, sem precisar de nova
+    // coleta. Ver lib/validation/rawFrameDb.ts.
+    //
+    // 0 = grava todo quadro processado durante a repetição, sem pular
+    // nenhum. Cheguei a considerar gravar só 1 a cada ~80ms (~12,5
+    // quadros por segundo) para ocupar menos espaço, mas voltei atrás:
+    // o suavizador (lib/smoothing.ts) reage a CADA quadro que recebe,
+    // não a um intervalo de tempo fixo — se o reprocessamento receber
+    // uma sequência mais espaçada do que a que o suavizador realmente
+    // viu ao vivo, o resultado da suavização reprocessada não bate mais
+    // com o que o app mediu de verdade. Como o custo em espaço de
+    // gravar tudo é pequeno (poucas centenas de KB por repetição, não
+    // imagem/vídeo, só números), preferi manter fiel em vez de
+    // economizar espaço que não estava fazendo falta. Se algum dia o
+    // volume virar problema na prática, é só aumentar este número.
+    rawFrameSampleIntervalMs: 0,
+  },
 
   // Passo 3 — ligar o suavizador de pontos do corpo (lib/smoothing.ts).
+  //
+  // Filtro usado: média móvel exponencial (EMA — "Exponential Moving
+  // Average"), um dos filtros de suavização mais simples e comuns que
+  // existem. Para cada ponto do corpo, em vez de confiar 100% na leitura
+  // nova da câmera, ele mistura a leitura nova com o valor já suavizado
+  // do quadro anterior:
+  //
+  //   novo_suavizado = suavizado_anterior + alpha × (bruto_novo − suavizado_anterior)
+  //
+  // alpha = quanto peso a leitura NOVA recebe nessa mistura, de 0 a 1.
+  //   - Mais perto de 1: responde mais rápido ao movimento real, mas
+  //     suaviza menos o tremor.
+  //   - Mais perto de 0: suaviza mais o tremor, mas demora mais para
+  //     "acompanhar" um movimento rápido.
+  //
+  // Efeito colateral esperado (e por isso o modo de validação existe):
+  // esse tipo de filtro SEMPRE atrasa um pouco a detecção do pico (o app
+  // pode demorar alguns quadros a mais para perceber que a pessoa já
+  // chegou no topo do movimento) e PODE reduzir levemente o valor do
+  // pico relatado, se o movimento for rápido e a pessoa não segurar a
+  // posição no topo — o filtro "não tem tempo" de acompanhar um pico
+  // muito rápido e passageiro. Se a pessoa segura a posição por um
+  // instante no topo (como o passo 5 vai reforçar com o "segure...
+  // pronto"), o filtro tem tempo de alcançar o valor real, e esse efeito
+  // fica bem menor.
   smoothing: {
-    // Suavização por média móvel exponencial (EMA), aplicada a cada
-    // ponto do corpo (ombro, cotovelo, joelho etc.) antes de qualquer
-    // cálculo de ângulo — reduz o "tremor" quadro a quadro sem atrasar
-    // muito a resposta ao movimento real.
-    //
-    // alpha = peso do quadro mais recente, de 0 a 1. Mais perto de 1 =
-    // responde mais rápido, mas suaviza menos. Mais perto de 0 = mais
-    // suave, mas com mais atraso. 0.35 é o valor com que
-    // lib/smoothing.ts (PointEmaFilter) já foi escrito e testado
-    // isoladamente — mantido aqui como o mesmo número, só que agora
-    // documentado e num lugar central em vez de um valor padrão perdido
-    // dentro da classe.
+    // 0.35 é o valor com que lib/smoothing.ts (PointEmaFilter) já foi
+    // escrito e testado isoladamente — mantido aqui como o mesmo número,
+    // só que agora documentado e num lugar central em vez de um valor
+    // padrão perdido dentro da classe.
     emaAlpha: 0.35,
   },
 

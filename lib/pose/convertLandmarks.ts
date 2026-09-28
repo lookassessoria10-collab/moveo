@@ -32,6 +32,30 @@ export interface RawLandmark {
   visibility?: number;
 }
 
+function buildFrameLandmarks(raw: RawLandmark[], transform: (p: RawLandmark) => Point2D): FrameLandmarks {
+  return {
+    nose: transform(raw[IDX.nose]),
+    leftEar: transform(raw[IDX.leftEar]),
+    rightEar: transform(raw[IDX.rightEar]),
+    leftShoulder: transform(raw[IDX.leftShoulder]),
+    rightShoulder: transform(raw[IDX.rightShoulder]),
+    leftElbow: transform(raw[IDX.leftElbow]),
+    rightElbow: transform(raw[IDX.rightElbow]),
+    leftWrist: transform(raw[IDX.leftWrist]),
+    rightWrist: transform(raw[IDX.rightWrist]),
+    leftHip: transform(raw[IDX.leftHip]),
+    rightHip: transform(raw[IDX.rightHip]),
+    leftKnee: transform(raw[IDX.leftKnee]),
+    rightKnee: transform(raw[IDX.rightKnee]),
+    leftAnkle: transform(raw[IDX.leftAnkle]),
+    rightAnkle: transform(raw[IDX.rightAnkle]),
+    leftHeel: transform(raw[IDX.leftHeel]),
+    rightHeel: transform(raw[IDX.rightHeel]),
+    leftFootIndex: transform(raw[IDX.leftFootIndex]),
+    rightFootIndex: transform(raw[IDX.rightFootIndex]),
+  };
+}
+
 /**
  * Converte os landmarks brutos do MediaPipe (coordenadas normalizadas do
  * frame de câmera não espelhado) para o formato interno da aplicação,
@@ -43,36 +67,29 @@ export interface RawLandmark {
  */
 export function convertLandmarks(raw: RawLandmark[] | undefined): FrameLandmarks | null {
   if (!raw || raw.length < 33) return null;
-
-  const mirror = (p: RawLandmark): Point2D => ({
-    x: 1 - p.x,
-    y: p.y,
-    z: p.z,
-    visibility: p.visibility,
-  });
-
   const allIndices = Object.values(IDX);
   if (allIndices.some((i) => !raw[i])) return null;
 
-  return {
-    nose: mirror(raw[IDX.nose]),
-    leftEar: mirror(raw[IDX.leftEar]),
-    rightEar: mirror(raw[IDX.rightEar]),
-    leftShoulder: mirror(raw[IDX.leftShoulder]),
-    rightShoulder: mirror(raw[IDX.rightShoulder]),
-    leftElbow: mirror(raw[IDX.leftElbow]),
-    rightElbow: mirror(raw[IDX.rightElbow]),
-    leftWrist: mirror(raw[IDX.leftWrist]),
-    rightWrist: mirror(raw[IDX.rightWrist]),
-    leftHip: mirror(raw[IDX.leftHip]),
-    rightHip: mirror(raw[IDX.rightHip]),
-    leftKnee: mirror(raw[IDX.leftKnee]),
-    rightKnee: mirror(raw[IDX.rightKnee]),
-    leftAnkle: mirror(raw[IDX.leftAnkle]),
-    rightAnkle: mirror(raw[IDX.rightAnkle]),
-    leftHeel: mirror(raw[IDX.leftHeel]),
-    rightHeel: mirror(raw[IDX.rightHeel]),
-    leftFootIndex: mirror(raw[IDX.leftFootIndex]),
-    rightFootIndex: mirror(raw[IDX.rightFootIndex]),
-  };
+  return buildFrameLandmarks(raw, (p) => ({ x: 1 - p.x, y: p.y, z: p.z, visibility: p.visibility }));
+}
+
+/**
+ * Converte os "worldLandmarks" do MediaPipe — uma saída separada dos
+ * landmarks normais, em coordenadas 3D de escala métrica (metros),
+ * centradas aproximadamente no quadril. Usados só no modo de validação
+ * (gravação bruta para reprocessamento futuro — ver
+ * lib/validation/rawFrameDb.ts), nunca em nenhum cálculo do app hoje.
+ *
+ * Sem espelhamento: ao contrário de convertLandmarks (usado para exibir
+ * overlay sobre um vídeo espelhado), os worldLandmarks não são
+ * desenhados na tela — mantidos exatamente como o MediaPipe entrega,
+ * para não inventar uma convenção de eixo que o próprio MediaPipe não
+ * documenta como espelhável.
+ */
+export function convertWorldLandmarks(raw: RawLandmark[] | undefined): FrameLandmarks | null {
+  if (!raw || raw.length < 33) return null;
+  const allIndices = Object.values(IDX);
+  if (allIndices.some((i) => !raw[i])) return null;
+
+  return buildFrameLandmarks(raw, (p) => ({ x: p.x, y: p.y, z: p.z, visibility: p.visibility }));
 }

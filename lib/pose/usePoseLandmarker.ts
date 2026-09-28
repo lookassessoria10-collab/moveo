@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { loadPoseLandmarker } from "./loadPoseLandmarker";
-import { convertLandmarks } from "./convertLandmarks";
+import { convertLandmarks, convertWorldLandmarks } from "./convertLandmarks";
 import { FrameLandmarks } from "../types";
 
 export interface PoseLoopStats {
@@ -18,7 +18,12 @@ export interface PoseLoopStats {
  */
 export function usePoseLandmarker(
   videoRef: React.RefObject<HTMLVideoElement>,
-  onFrame: (landmarks: FrameLandmarks | null, timestamp: number, poseCount: number) => void,
+  onFrame: (
+    landmarks: FrameLandmarks | null,
+    timestamp: number,
+    poseCount: number,
+    worldLandmarks: FrameLandmarks | null
+  ) => void,
   active: boolean,
   options: { numPoses?: number } = {}
 ) {
@@ -55,7 +60,16 @@ export function usePoseLandmarker(
             const landmarks = convertLandmarks(
               result.landmarks?.[0] as { x: number; y: number; z?: number; visibility?: number }[] | undefined
             );
-            onFrameRef.current(landmarks, nowMs, poseCount);
+            // worldLandmarks: saída 3D separada (metros), só usada pela
+            // gravação bruta do modo de validação — barata de extrair
+            // (já vem no mesmo resultado), por isso sempre repassada,
+            // mesmo fora do modo de validação (quem não usa, ignora).
+            const worldLandmarks = convertWorldLandmarks(
+              result.worldLandmarks?.[0] as
+                | { x: number; y: number; z?: number; visibility?: number }[]
+                | undefined
+            );
+            onFrameRef.current(landmarks, nowMs, poseCount, worldLandmarks);
 
             lastFrameCount++;
             if (nowMs - fpsWindowStart >= 1000) {

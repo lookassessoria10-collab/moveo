@@ -24,9 +24,12 @@ import { CameraTopBar } from "@/components/shared/CameraTopBar";
 import { useValidationMode } from "@/lib/validation/useValidationMode";
 import { useValidationSession } from "@/lib/validation/sessionStore";
 import { useValidationRecordsStore } from "@/lib/validation/recordsStore";
-import { ValidationRecord } from "@/lib/validation/types";
+import { ValidationRecord, RawFrameRecord, RawFrameSample } from "@/lib/validation/types";
+import { addRawFrameRecord } from "@/lib/validation/rawFrameDb";
 import { ReferenceValueEntry } from "@/components/shared/ReferenceValueEntry";
 import { ALGORITHM_VERSION, PRECISION_CONFIG } from "@/config/precision";
+
+const RAW_FRAME_INTERVAL_MS = PRECISION_CONFIG.validation.rawFrameSampleIntervalMs;
 
 const REPS = KNEE_CONFIG.protocol.repetitionsPerMovement;
 const CALIBRATION_MS = KNEE_CONFIG.protocol.calibrationDurationMs;
@@ -104,6 +107,12 @@ export function KneeCameraFlow() {
   const rawAngleBufferRef = useRef<number[]>([]);
   const smoothedAngleBufferRef = useRef<number[]>([]);
   const visibilitySamplesRef = useRef<number[]>([]);
+  // Gravação bruta (passo intermediário) — ver comentário em components/CameraFlow.tsx.
+  const lastRawLandmarksRef = useRef<FrameLandmarks | null>(null);
+  const worldLandmarksRef = useRef<FrameLandmarks | null>(null);
+  const rawFrameSamplesRef = useRef<RawFrameSample[]>([]);
+  const lastRawFrameSampleTsRef = useRef(-Infinity);
+  const currentRecordIdRef = useRef<string>("");
 
   useEffect(() => {
     if (screen === "camera") camera.start();
@@ -272,6 +281,7 @@ export function KneeCameraFlow() {
   };
 
   const handleFrame = (rawLandmarks: FrameLandmarks | null) => {
+    lastRawLandmarksRef.current = rawLandmarks;
     // Passo 3: suaviza antes de qualquer outra coisa — ver comentário em
     // components/CameraFlow.tsx.
     const landmarks = rawLandmarks ? smootherRef.current.smooth(rawLandmarks) : null;
@@ -399,6 +409,32 @@ export function KneeCameraFlow() {
   };
 
   /**
+   * Monta o registro bruto (pontos quadro a quadro, ANTES da suavização)
+   * de uma repetição — ver comentário em components/CameraFlow.tsx.
+   */
+  const buildRawFrameRecord = (
+    status: "valida" | "cancelada",
+    referenceValueDeg: number | null
+  ): RawFrameRecord | null => {
+    if (!item || !calibration) return null;
+    return {
+      recordId: currentRecordIdRef.current,
+      algorithmVersion: ALGORITHM_VERSION,
+      volunteerCode: validationSession.volunteerCode,
+      examinerCode: validationSession.examinerCode,
+      region: "joelho",
+      test: item.test,
+      side: item.side,
+      repetitionIndex: repIndexRef.current + 1,
+      status,
+      referenceValueDeg,
+      instrument: validationSession.instrument,
+      calibration: { ...calibration },
+      samples: rawFrameSamplesRef.current,
+    };
+  };
+
+  /**
    * Chamado quando o examinador confirma o valor de referência (goniômetro
    * / inclinômetro) no modo de validação. Usa os quadros já congelados no
    * instante do "segure a posição" — nada foi atualizado desde então.
@@ -417,6 +453,7 @@ export function KneeCameraFlow() {
     const secondsToConfirm = lockedAtMsRef.current !== null ? (Date.now() - lockedAtMsRef.current) / 1000 : null;
 
     const record: ValidationRecord = {
+      recordId: currentRecordIdRef.current,
       algorithmVersion: ALGORITHM_VERSION,
       volunteerCode: validationSession.volunteerCode,
       examinerCode: validationSession.examinerCode,
@@ -439,12 +476,15 @@ export function KneeCameraFlow() {
       timestampIso: new Date().toISOString(),
     };
     addValidationRecord(record);
+    const rawRecord = buildRawFrameRecord("valida", referenceValue);
+    if (rawRecord) addRawFrameRecord(rawRecord).catch(() => {});
 
     awaitingReferenceRef.current = false;
     lockedAtMsRef.current = null;
     rawAngleBufferRef.current = [];
     smoothedAngleBufferRef.current = [];
     visibilitySamplesRef.current = [];
+    rawFrameSamplesRef.current = [];
 
     speech.speak("Valor registrado, pode relaxar.", { force: true, interrupt: false });
     setTestUi((u) => ({ ...u, awaitingReference: false }));
@@ -477,6 +517,7 @@ export function KneeCameraFlow() {
         speech.speak(lostMessage, { force: true });
         if (validationMode) {
           addValidationRecord({
+            recordId: currentRecordIdRef.current,
             algorithmVersion: ALGORITHM_VERSION,
             volunteerCode: validationSession.volunteerCode,
             examinerCode: validationSession.examinerCode,
@@ -498,12 +539,15 @@ export function KneeCameraFlow() {
             userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
             timestampIso: new Date().toISOString(),
           });
+          const rawRecord = buildRawFrameRecord("cancelada", null);
+          if (rawRecord) addRawFrameRecord(rawRecord).catch(() => {});
         }
         machineRef.current.reset();
         framesBufferRef.current = [];
         rawAngleBufferRef.current = [];
         smoothedAngleBufferRef.current = [];
         visibilitySamplesRef.current = [];
+        rawFrameSamplesRef.current = [];
         capturingRef.current = false;
       }
       return;
@@ -557,6 +601,12 @@ export function KneeCameraFlow() {
       rawAngleBufferRef.current = [];
       smoothedAngleBufferRef.current = [];
       visibilitySamplesRef.current = [];
+      rawFrameSamplesRef.current = [];
+      lastRawFrameSampleTsRef.current = -Infinity;
+      currentRecordIdRef.current =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       handsNearHipRef.current = false;
     }
 
@@ -581,6 +631,17 @@ export function KneeCameraFlow() {
         );
         if (visSamples.length) {
           visibilitySamplesRef.current.push(visSamples.reduce((a, b) => a + b, 0) / visSamples.length);
+        }
+        if (
+          lastRawLandmarksRef.current &&
+          timestamp - lastRawFrameSampleTsRef.current >= RAW_FRAME_INTERVAL_MS
+        ) {
+          lastRawFrameSampleTsRef.current = timestamp;
+          rawFrameSamplesRef.current.push({
+            t: timestamp,
+            landmarks: lastRawLandmarksRef.current,
+            worldLandmarks: worldLandmarksRef.current,
+          });
         }
       }
     }
@@ -623,8 +684,9 @@ export function KneeCameraFlow() {
 
   usePoseLandmarker(
     videoRef,
-    (lm, _ts, poseCount) => {
+    (lm, _ts, poseCount, worldLm) => {
       poseCountRef.current = poseCount;
+      worldLandmarksRef.current = worldLm;
       handleFrame(lm);
     },
     camera.status === "ready",

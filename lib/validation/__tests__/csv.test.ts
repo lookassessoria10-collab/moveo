@@ -4,6 +4,7 @@ import { ValidationRecord } from "../types";
 
 function baseRecord(overrides: Partial<ValidationRecord> = {}): ValidationRecord {
   return {
+    recordId: "r1",
     algorithmVersion: "2026.09-baseline",
     volunteerCode: "V01",
     examinerCode: "EX1",

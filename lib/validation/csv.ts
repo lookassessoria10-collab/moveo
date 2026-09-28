@@ -1,6 +1,7 @@
 import { ValidationRecord } from "./types";
 
 const COLUMNS: { key: keyof ValidationRecord; header: string }[] = [
+  { key: "recordId", header: "id_registro" },
   { key: "algorithmVersion", header: "versao_algoritmo" },
   { key: "volunteerCode", header: "codigo_voluntario" },
   { key: "examinerCode", header: "codigo_examinador" },

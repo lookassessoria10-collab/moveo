@@ -2,6 +2,8 @@
 // Usado apenas por quem entra com ?modo=validacao na URL — nunca aparece
 // para o paciente comum.
 
+import { FrameLandmarks } from "@/lib/types";
+
 export type Instrument = "goniometro" | "inclinometro";
 
 export type ValidationRegion = "ombro" | "joelho";
@@ -14,6 +16,8 @@ export type ValidationRecordStatus = "valida" | "cancelada";
  * digitados manualmente (ex.: "V01", "EX1").
  */
 export interface ValidationRecord {
+  /** Liga esta linha do CSV à sequência de pontos brutos correspondente (ver RawFrameRecord). */
+  recordId: string;
   algorithmVersion: string;
   volunteerCode: string;
   examinerCode: string;
@@ -39,4 +43,42 @@ export interface ValidationRecord {
   secondsToConfirm: number | null;
   userAgent: string;
   timestampIso: string;
+}
+
+/**
+ * Um quadro gravado dentro de uma repetição, ANTES da suavização —
+ * matéria-prima para reprocessar com qualquer versão do algoritmo depois
+ * (ver scripts/reprocess-validation.ts). Nenhuma imagem/vídeo, só
+ * coordenadas.
+ */
+export interface RawFrameSample {
+  /** performance.now() no momento da captura deste quadro. */
+  t: number;
+  /** Landmarks normalizados (0 a 1), espelhados — o mesmo referencial usado em todos os cálculos do app. */
+  landmarks: FrameLandmarks;
+  /** Landmarks 3D em metros (saída separada do MediaPipe) — null se o modelo não os entregou naquele quadro. */
+  worldLandmarks: FrameLandmarks | null;
+}
+
+/**
+ * A sequência bruta de uma repetição inteira (uma por linha do CSV,
+ * ligada por "recordId"), incluindo a calibração daquele bloco — o
+ * necessário para recalcular o valor medido com qualquer versão do
+ * algoritmo sem precisar de nova coleta.
+ */
+export interface RawFrameRecord {
+  recordId: string;
+  algorithmVersion: string;
+  volunteerCode: string;
+  examinerCode: string;
+  region: ValidationRegion;
+  test: string;
+  side: string;
+  repetitionIndex: number;
+  status: ValidationRecordStatus;
+  referenceValueDeg: number | null;
+  instrument: Instrument;
+  /** Cópia do objeto de calibração do bloco (ex.: neutralArmAngleRight/Left, neutralTrunkAngle) — formato varia por região. */
+  calibration: Record<string, unknown>;
+  samples: RawFrameSample[];
 }
