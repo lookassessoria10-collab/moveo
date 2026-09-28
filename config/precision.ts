@@ -31,15 +31,35 @@
  * - "2026.09-baseline": primeira marca, antes de qualquer mudança de
  *   cálculo desta iniciativa — usada para medir a linha de base do
  *   algoritmo atual (passo 2), antes de comparar com os passos seguintes.
+ * - "2026.09-smoothing-v1": passo 3 — liga o suavizador de pontos do
+ *   corpo (lib/smoothing.ts) que já existia pronto, mas não estava
+ *   conectado em nenhum módulo. Só afeta o valor medido para quem coletar
+ *   dados de validação a partir de agora — CSVs anteriores (baseline)
+ *   têm "algorithmVersion" diferente e não devem ser comparados linha a
+ *   linha com os novos sem levar essa mudança em conta.
  */
-export const ALGORITHM_VERSION = "2026.09-baseline";
+export const ALGORITHM_VERSION = "2026.09-smoothing-v1";
 
 export const PRECISION_CONFIG = {
   // Passo 2 — modo de validação com goniômetro.
   validation: {},
 
   // Passo 3 — ligar o suavizador de pontos do corpo (lib/smoothing.ts).
-  smoothing: {},
+  smoothing: {
+    // Suavização por média móvel exponencial (EMA), aplicada a cada
+    // ponto do corpo (ombro, cotovelo, joelho etc.) antes de qualquer
+    // cálculo de ângulo — reduz o "tremor" quadro a quadro sem atrasar
+    // muito a resposta ao movimento real.
+    //
+    // alpha = peso do quadro mais recente, de 0 a 1. Mais perto de 1 =
+    // responde mais rápido, mas suaviza menos. Mais perto de 0 = mais
+    // suave, mas com mais atraso. 0.35 é o valor com que
+    // lib/smoothing.ts (PointEmaFilter) já foi escrito e testado
+    // isoladamente — mantido aqui como o mesmo número, só que agora
+    // documentado e num lugar central em vez de um valor padrão perdido
+    // dentro da classe.
+    emaAlpha: 0.35,
+  },
 
   // Passo 4 — checagens antes de medir (inclinação do celular, luz).
   preCheck: {},

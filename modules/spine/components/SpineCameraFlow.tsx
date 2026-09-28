@@ -7,10 +7,11 @@ import { FrameLandmarks, Point2D } from "@/lib/types";
 import { calculateTrunkAngle } from "@/lib/angles";
 import { distance, midpoint } from "@/lib/geometry";
 import { MovementStateMachine } from "@/lib/movementDetection";
-import { MovingAverage } from "@/lib/smoothing";
+import { MovingAverage, LandmarksSmoother } from "@/lib/smoothing";
 import { calculateAngularVelocity, calculateMovementDuration } from "@/lib/movementMetrics";
 import { checkOrientation, checkVerticalFraming } from "@/lib/framing";
 import { SPINE_CONFIG } from "@/config/modules/spine";
+import { PRECISION_CONFIG } from "@/config/precision";
 import { tiltFromHorizontal } from "../angles";
 import { useSpineStore, SPINE_QUEUE, SpineQueueItem } from "../store";
 import { SpineAttempt, SpineMovementFrame } from "../types";
@@ -60,6 +61,9 @@ export function SpineCameraFlow() {
 
   const machineRef = useRef(new MovementStateMachine(SPINE_CONFIG.thresholds.movementDetection));
   const angleMaRef = useRef(new MovingAverage(5));
+  // Passo 3 da iniciativa de precisão: suaviza os pontos do corpo antes de
+  // qualquer cálculo de ângulo — ver comentário em components/CameraFlow.tsx.
+  const smootherRef = useRef(new LandmarksSmoother(PRECISION_CONFIG.smoothing.emaAlpha));
   const repIndexRef = useRef(0);
   const capturingRef = useRef(false);
   const framesBufferRef = useRef<SpineMovementFrame[]>([]);
@@ -164,7 +168,10 @@ export function SpineCameraFlow() {
     });
   };
 
-  const handleFrame = (landmarks: FrameLandmarks | null) => {
+  const handleFrame = (rawLandmarks: FrameLandmarks | null) => {
+    // Passo 3: suaviza antes de qualquer outra coisa — ver comentário em
+    // components/CameraFlow.tsx.
+    const landmarks = rawLandmarks ? smootherRef.current.smooth(rawLandmarks) : null;
     const timestamp = performance.now();
     const currentScreen = useSpineStore.getState().screen;
     drawFrame(landmarks);
@@ -193,7 +200,10 @@ export function SpineCameraFlow() {
         setCalibrationProgress(0);
         return;
       }
-      if (calibrationStartRef.current === null) calibrationStartRef.current = timestamp;
+      if (calibrationStartRef.current === null) {
+        calibrationStartRef.current = timestamp;
+        smootherRef.current.reset();
+      }
       if (!calibrationSpokenRef.current) {
         calibrationSpokenRef.current = true;
         speech.speak(item.calibrationInstruction, { force: true });

@@ -6,8 +6,10 @@ import { usePoseLandmarker } from "@/lib/pose/usePoseLandmarker";
 import { FrameLandmarks, Point2D } from "@/lib/types";
 import { midpoint } from "@/lib/geometry";
 import { average, standardDeviation } from "@/lib/movementMetrics";
+import { LandmarksSmoother } from "@/lib/smoothing";
 import { checkOrientation, checkVerticalFraming } from "@/lib/framing";
 import { POSTURE_CONFIG } from "@/config/modules/posture";
+import { PRECISION_CONFIG } from "@/config/precision";
 import { tiltFromVerticalDeg } from "../angles";
 import { usePostureStore } from "../store";
 import { PostureReading, PostureSample, Side } from "../types";
@@ -49,6 +51,9 @@ export function PostureCameraFlow() {
   const captureStartRef = useRef<number | null>(null);
   const captureSpokenRef = useRef(false);
   const samplesRef = useRef<PostureSample[]>([]);
+  // Passo 3 da iniciativa de precisão: suaviza os pontos do corpo antes de
+  // qualquer cálculo de ângulo — ver comentário em components/CameraFlow.tsx.
+  const smootherRef = useRef(new LandmarksSmoother(PRECISION_CONFIG.smoothing.emaAlpha));
 
   useEffect(() => {
     if (screen === "camera") camera.start();
@@ -112,7 +117,10 @@ export function PostureCameraFlow() {
     });
   };
 
-  const handleFrame = (landmarks: FrameLandmarks | null) => {
+  const handleFrame = (rawLandmarks: FrameLandmarks | null) => {
+    // Passo 3: suaviza antes de qualquer outra coisa — ver comentário em
+    // components/CameraFlow.tsx.
+    const landmarks = rawLandmarks ? smootherRef.current.smooth(rawLandmarks) : null;
     const timestamp = performance.now();
     const currentScreen = usePostureStore.getState().screen;
     drawFrame(landmarks);
@@ -153,7 +161,10 @@ export function PostureCameraFlow() {
     const hip = side === "right" ? landmarks.rightHip : landmarks.leftHip;
     if (![ear, shoulder, hip].every(visible)) return;
 
-    if (captureStartRef.current === null) captureStartRef.current = timestamp;
+    if (captureStartRef.current === null) {
+      captureStartRef.current = timestamp;
+      smootherRef.current.reset();
+    }
     if (!captureSpokenRef.current) {
       captureSpokenRef.current = true;
       speech.speak("Fique parado, na posição em que você costuma trabalhar.", { force: true });

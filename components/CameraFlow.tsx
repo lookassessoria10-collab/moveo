@@ -9,7 +9,7 @@ import { checkPositioning, PositioningCheck } from "@/lib/positioning";
 import { calculateShoulderFlexionAngle, calculateAbductionAngle, calculateTrunkAngle } from "@/lib/angles";
 import { midpoint } from "@/lib/geometry";
 import { MovementStateMachine } from "@/lib/movementDetection";
-import { MovingAverage } from "@/lib/smoothing";
+import { MovingAverage, LandmarksSmoother } from "@/lib/smoothing";
 import {
   calculateAngularVelocity,
   calculateMovementDuration,
@@ -31,7 +31,7 @@ import { useValidationSession } from "@/lib/validation/sessionStore";
 import { useValidationRecordsStore } from "@/lib/validation/recordsStore";
 import { ValidationRecord } from "@/lib/validation/types";
 import { ReferenceValueEntry } from "./shared/ReferenceValueEntry";
-import { ALGORITHM_VERSION } from "@/config/precision";
+import { ALGORITHM_VERSION, PRECISION_CONFIG } from "@/config/precision";
 
 const MOVEMENT_TITLE: Record<Movement, string> = {
   flexion: "Flexão",
@@ -87,6 +87,11 @@ export function CameraFlow() {
 
   const machineRef = useRef(new MovementStateMachine());
   const angleMaRef = useRef(new MovingAverage(5));
+  // Passo 3 da iniciativa de precisão: suaviza os pontos do corpo (x/y de
+  // cada landmark) antes de qualquer cálculo de ângulo — reduz o tremor
+  // quadro a quadro do MediaPipe. Reiniciado a cada nova calibração (ver
+  // handleFrame), para não "arrastar" a posição de um teste anterior.
+  const smootherRef = useRef(new LandmarksSmoother(PRECISION_CONFIG.smoothing.emaAlpha));
   const repIndexRef = useRef(0);
   const capturingRef = useRef(false);
   const framesBufferRef = useRef<MovementFrame[]>([]);
@@ -163,7 +168,11 @@ export function CameraFlow() {
     };
   }, [screen, queueIndex]);
 
-  const handleFrame = (landmarks: FrameLandmarks | null) => {
+  const handleFrame = (rawLandmarks: FrameLandmarks | null) => {
+    // Passo 3: suaviza antes de qualquer outra coisa — tudo daqui pra
+    // baixo (checagens, calibração, teste, overlay) usa o valor já
+    // suavizado, nunca o bruto.
+    const landmarks = rawLandmarks ? smootherRef.current.smooth(rawLandmarks) : null;
     lastLandmarksRef.current = landmarks;
     const timestamp = performance.now();
     const currentScreen = useAssessmentStore.getState().screen;
@@ -193,7 +202,10 @@ export function CameraFlow() {
         setCalibrationProgress(0);
         return;
       }
-      if (calibrationStartRef.current === null) calibrationStartRef.current = timestamp;
+      if (calibrationStartRef.current === null) {
+        calibrationStartRef.current = timestamp;
+        smootherRef.current.reset();
+      }
       if (!calibrationSpokenRef.current) {
         calibrationSpokenRef.current = true;
         speech.speak("Fique parado por um instante.", { force: true });

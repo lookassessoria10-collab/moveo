@@ -7,7 +7,7 @@ import { FrameLandmarks, Point2D } from "@/lib/types";
 import { calculateTrunkAngle } from "@/lib/angles";
 import { distance, midpoint } from "@/lib/geometry";
 import { MovementStateMachine } from "@/lib/movementDetection";
-import { MovingAverage } from "@/lib/smoothing";
+import { MovingAverage, LandmarksSmoother } from "@/lib/smoothing";
 import { calculateAngularVelocity, calculateMovementDuration } from "@/lib/movementMetrics";
 import { calculateMaxTrunkCompensation } from "@/lib/trunkCompensation";
 import { checkOrientation, checkVerticalFraming } from "@/lib/framing";
@@ -26,7 +26,7 @@ import { useValidationSession } from "@/lib/validation/sessionStore";
 import { useValidationRecordsStore } from "@/lib/validation/recordsStore";
 import { ValidationRecord } from "@/lib/validation/types";
 import { ReferenceValueEntry } from "@/components/shared/ReferenceValueEntry";
-import { ALGORITHM_VERSION } from "@/config/precision";
+import { ALGORITHM_VERSION, PRECISION_CONFIG } from "@/config/precision";
 
 const REPS = KNEE_CONFIG.protocol.repetitionsPerMovement;
 const CALIBRATION_MS = KNEE_CONFIG.protocol.calibrationDurationMs;
@@ -82,6 +82,9 @@ export function KneeCameraFlow() {
 
   const machineRef = useRef(new MovementStateMachine(KNEE_CONFIG.thresholds.movementDetection));
   const angleMaRef = useRef(new MovingAverage(5));
+  // Passo 3 da iniciativa de precisão: suaviza os pontos do corpo antes de
+  // qualquer cálculo de ângulo — ver comentário em components/CameraFlow.tsx.
+  const smootherRef = useRef(new LandmarksSmoother(PRECISION_CONFIG.smoothing.emaAlpha));
   const repIndexRef = useRef(0);
   const capturingRef = useRef(false);
   const framesBufferRef = useRef<KneeMovementFrame[]>([]);
@@ -268,7 +271,10 @@ export function KneeCameraFlow() {
     return framing;
   };
 
-  const handleFrame = (landmarks: FrameLandmarks | null) => {
+  const handleFrame = (rawLandmarks: FrameLandmarks | null) => {
+    // Passo 3: suaviza antes de qualquer outra coisa — ver comentário em
+    // components/CameraFlow.tsx.
+    const landmarks = rawLandmarks ? smootherRef.current.smooth(rawLandmarks) : null;
     const timestamp = performance.now();
     const currentScreen = useKneeStore.getState().screen;
     drawFrame(landmarks);
@@ -298,7 +304,10 @@ export function KneeCameraFlow() {
         setCalibrationProgress(0);
         return;
       }
-      if (calibrationStartRef.current === null) calibrationStartRef.current = timestamp;
+      if (calibrationStartRef.current === null) {
+        calibrationStartRef.current = timestamp;
+        smootherRef.current.reset();
+      }
       if (!calibrationSpokenRef.current) {
         calibrationSpokenRef.current = true;
         speech.speak(item.calibrationInstruction, { force: true });
