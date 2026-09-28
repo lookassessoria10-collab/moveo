@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { ScreenShell } from "./ui/Card";
 import { APP_CONFIG } from "@/config/app";
+import { useValidationMode } from "@/lib/validation/useValidationMode";
+import { ValidationBanner } from "./shared/ValidationBanner";
 
 interface RegionCard {
   href: string;
@@ -72,30 +74,36 @@ function PostureIcon({ color }: { color: string }) {
 }
 
 export function RegionSelectScreen() {
+  const validationMode = useValidationMode();
+  // Repassa o modo de validação para as regiões — sem isso, o link só
+  // funcionava se a pessoa colasse "?modo=validacao" direto na URL de
+  // cada região; clicando a partir desta tela, o parâmetro se perdia.
+  const suffix = validationMode ? "?modo=validacao" : "";
+
   const cards: RegionCard[] = [
     {
-      href: "/assessment/shoulder",
+      href: `/assessment/shoulder${suffix}`,
       title: "OMBRO",
       description: "Avalie amplitude, assimetria e compensações dos movimentos do ombro.",
       accent: APP_CONFIG.colors.right,
       icon: <ShoulderIcon color={APP_CONFIG.colors.right} />,
     },
     {
-      href: "/assessment/knee",
+      href: `/assessment/knee${suffix}`,
       title: "JOELHO",
       description: "Avalie mobilidade, controle e simetria durante movimentos funcionais.",
       accent: APP_CONFIG.colors.left,
       icon: <KneeIcon color={APP_CONFIG.colors.left} />,
     },
     {
-      href: "/assessment/spine",
+      href: `/assessment/spine${suffix}`,
       title: "COLUNA",
       description: "Observe mobilidade, inclinações e assimetrias durante movimentos do tronco.",
       accent: APP_CONFIG.colors.warn,
       icon: <SpineIcon color={APP_CONFIG.colors.warn} />,
     },
     {
-      href: "/assessment/posture",
+      href: `/assessment/posture${suffix}`,
       title: "POSTURA SENTADA",
       description: "Observe sua postura sentada no trabalho — ferramenta de conscientização ergonômica.",
       accent: APP_CONFIG.colors.posture,
@@ -105,6 +113,11 @@ export function RegionSelectScreen() {
 
   return (
     <ScreenShell>
+      {validationMode && (
+        <div className="-mx-5 -mt-8 mb-4">
+          <ValidationBanner />
+        </div>
+      )}
       <div className="mb-2 flex items-center">
         {APP_CONFIG.logo ? (
           // eslint-disable-next-line @next/next/no-img-element

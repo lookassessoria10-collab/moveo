@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { painLabel } from "@/lib/resultRules";
 import { KNEE_CONFIG } from "@/config/modules/knee";
 import { useKneeStore } from "../../store";
+import { ValidationDataCard } from "@/components/shared/ValidationDataCard";
 
 function AmplitudeBar({ label, right, left }: { label: string; right: number | null; left: number | null }) {
   const pct = (v: number | null) => (v === null ? 0 : Math.min(100, (v / 150) * 100));
@@ -173,6 +174,8 @@ export function ResultsScreen() {
           <Button variant="ghost">AVALIAR OUTRA REGIÃO</Button>
         </Link>
       </div>
+
+      <ValidationDataCard />
 
       <p className="mt-6 text-center text-xs leading-relaxed text-moveo-muted">
         {KNEE_CONFIG.copy.disclaimerFinal}
