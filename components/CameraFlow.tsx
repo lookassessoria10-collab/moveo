@@ -26,6 +26,12 @@ import { PainQuestionScreen } from "./screens/PainQuestionScreen";
 import { useSpeech } from "@/lib/useSpeech";
 import { SoundToggle } from "./shared/SoundToggle";
 import { CameraTopBar } from "./shared/CameraTopBar";
+import { useValidationMode } from "@/lib/validation/useValidationMode";
+import { useValidationSession } from "@/lib/validation/sessionStore";
+import { useValidationRecordsStore } from "@/lib/validation/recordsStore";
+import { ValidationRecord } from "@/lib/validation/types";
+import { ReferenceValueEntry } from "./shared/ReferenceValueEntry";
+import { ALGORITHM_VERSION } from "@/config/precision";
 
 const MOVEMENT_TITLE: Record<Movement, string> = {
   flexion: "Flexão",
@@ -53,6 +59,10 @@ export function CameraFlow() {
   const queueIndex = useAssessmentStore((s) => s.queueIndex);
   const calibration = useAssessmentStore((s) => s.calibration);
 
+  const validationMode = useValidationMode();
+  const validationSession = useValidationSession();
+  const addValidationRecord = useValidationRecordsStore((s) => s.addRecord);
+
   const [positioning, setPositioning] = useState<PositioningCheck>({
     ok: false,
     key: "no_body",
@@ -65,7 +75,8 @@ export function CameraFlow() {
     message: string;
     countdown: number | null;
     lost: boolean;
-  }>({ repIndex: 0, angle: null, message: "", countdown: null, lost: false });
+    awaitingReference: boolean;
+  }>({ repIndex: 0, angle: null, message: "", countdown: null, lost: false, awaitingReference: false });
 
   // refs imperativos — não geram re-render a cada frame
   const holdStartRef = useRef<number | null>(null);
@@ -86,6 +97,14 @@ export function CameraFlow() {
   const reArmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLandmarksRef = useRef<FrameLandmarks | null>(null);
   const calibrationSpokenRef = useRef(false);
+
+  // Modo de validação (passo 2 da iniciativa de precisão) — só usados
+  // quando validationMode é true; não afetam o paciente comum.
+  const poseCountRef = useRef(1);
+  const awaitingReferenceRef = useRef(false);
+  const lockedAtMsRef = useRef<number | null>(null);
+  const rawAngleBufferRef = useRef<number[]>([]);
+  const visibilitySamplesRef = useRef<number[]>([]);
 
   // inicia câmera assim que a tela "camera" é exibida
   useEffect(() => {
@@ -115,7 +134,8 @@ export function CameraFlow() {
 
     let cancelled = false;
     let count = APP_CONFIG.protocol.countdownSeconds;
-    setTestUi({ repIndex: 0, angle: null, message: "", countdown: count, lost: false });
+    setTestUi({ repIndex: 0, angle: null, message: "", countdown: count, lost: false, awaitingReference: false });
+    awaitingReferenceRef.current = false;
 
     const tick = () => {
       if (cancelled) return;
@@ -225,11 +245,131 @@ export function CameraFlow() {
     }
   };
 
+  /**
+   * Termina a repetição (soma na store, decide se acabou o bloco ou re-arma
+   * para a próxima) — compartilhado pelo fluxo normal (detecção automática
+   * de retorno ao neutro) e pelo modo de validação (confirmação manual do
+   * examinador, ver finalizeValidatedRepetition).
+   */
+  const completeRepetition = (maxAngle: number, endTimestamp: number) => {
+    const item = TEST_QUEUE[queueIndex];
+    const baseline = calibration;
+    if (!item || !baseline) return;
+
+    capturingRef.current = false;
+    const neutral = item.side === "right" ? baseline.neutralArmAngleRight : baseline.neutralArmAngleLeft;
+    const duration = calculateMovementDuration(startTsRef.current, peakTsRef.current || endTimestamp);
+    const attempt: MovementAttempt = {
+      side: item.side,
+      movement: item.movement,
+      repetitionIndex: repIndexRef.current + 1,
+      frames: framesBufferRef.current,
+      maxAngle,
+      startTimestamp: startTsRef.current,
+      peakTimestamp: peakTsRef.current || endTimestamp,
+      endTimestamp,
+      duration,
+      averageAngularVelocity: calculateAngularVelocity(Math.max(0, maxAngle - neutral), duration),
+      maxTrunkCompensation: calculateMaxTrunkCompensation(framesBufferRef.current, baseline.neutralTrunkAngle),
+      angleBeforeCompensation: calculateAngleBeforeCompensation(framesBufferRef.current, baseline.neutralTrunkAngle),
+    };
+    useAssessmentStore.getState().addAttempt(attempt);
+    repIndexRef.current += 1;
+    framesBufferRef.current = [];
+
+    if (repIndexRef.current >= REPS) {
+      armedRef.current = false;
+      useAssessmentStore.getState().setScreen("painQuestion");
+      setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "Bloco concluído." }));
+    } else {
+      armedRef.current = false;
+      setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "Muito bem." }));
+      speech.speak("Muito bem.", { force: true, interrupt: false });
+      reArmTimerRef.current = setTimeout(() => {
+        machineRef.current.arm(neutral);
+        armedRef.current = true;
+        setTestUi((u) => ({ ...u, message: "" }));
+        speech.speak("Pode começar.", { force: true, interrupt: false });
+      }, 1600);
+    }
+  };
+
+  /**
+   * Chamado quando o examinador confirma o valor de referência (goniômetro
+   * / inclinômetro) no modo de validação. Usa os quadros já congelados no
+   * instante do "segure a posição" — nada foi atualizado desde então.
+   */
+  const handleReferenceConfirm = (referenceValue: number) => {
+    const item = TEST_QUEUE[queueIndex];
+    const baseline = calibration;
+    if (!item || !baseline) return;
+
+    const stablePeak = machineRef.current.getPeakAngle();
+    const smoothedVals = framesBufferRef.current.map((f) => f.armAngle);
+    const meanDeg = smoothedVals.length ? smoothedVals.reduce((a, b) => a + b, 0) / smoothedVals.length : null;
+    const rawMaxDeg = rawAngleBufferRef.current.length ? Math.max(...rawAngleBufferRef.current) : null;
+    const avgConfidence = visibilitySamplesRef.current.length
+      ? visibilitySamplesRef.current.reduce((a, b) => a + b, 0) / visibilitySamplesRef.current.length
+      : null;
+    const trunkComp = calculateMaxTrunkCompensation(framesBufferRef.current, baseline.neutralTrunkAngle);
+    const secondsToConfirm = lockedAtMsRef.current !== null ? (Date.now() - lockedAtMsRef.current) / 1000 : null;
+
+    const record: ValidationRecord = {
+      algorithmVersion: ALGORITHM_VERSION,
+      volunteerCode: validationSession.volunteerCode,
+      examinerCode: validationSession.examinerCode,
+      region: "ombro",
+      test: item.movement,
+      side: item.side,
+      repetitionIndex: repIndexRef.current + 1,
+      status: "valida",
+      cancelReason: null,
+      stablePeakDeg: stablePeak,
+      meanDeg,
+      rawMaxDeg,
+      avgLandmarkConfidence: avgConfidence,
+      trunkCompensationDeg: trunkComp,
+      view: "frente", // todo teste de ombro hoje é de frente (ver passo 7 do plano)
+      instrument: validationSession.instrument,
+      referenceValueDeg: referenceValue,
+      secondsToConfirm,
+      userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+      timestampIso: new Date().toISOString(),
+    };
+    addValidationRecord(record);
+
+    awaitingReferenceRef.current = false;
+    lockedAtMsRef.current = null;
+    rawAngleBufferRef.current = [];
+    visibilitySamplesRef.current = [];
+
+    speech.speak("Valor registrado, pode relaxar.", { force: true, interrupt: false });
+    setTestUi((u) => ({ ...u, awaitingReference: false }));
+    completeRepetition(stablePeak, performance.now());
+  };
+
   const handleTestFrame = (landmarks: FrameLandmarks | null, timestamp: number) => {
     if (!armedRef.current) return;
     const item = TEST_QUEUE[queueIndex];
     const baseline = calibration;
     if (!item || !baseline) return;
+
+    // Modo de validação: depois de travar o valor ("segure a posição"), a
+    // repetição não depende mais da câmera — o examinador pode se
+    // aproximar, e a pessoa pode até sair do quadro. Só o botão de
+    // confirmar (handleReferenceConfirm) decide o que acontece daqui.
+    if (validationMode && awaitingReferenceRef.current) return;
+
+    // Modo de validação: com o examinador por perto, é preciso garantir
+    // que só o voluntário está sendo medido — mas isso só importa durante
+    // o movimento, antes do valor travar (depois, o examinador já pode
+    // entrar no quadro para medir).
+    if (validationMode && poseCountRef.current > 1) {
+      const twoPeopleMessage = "Mais de uma pessoa no quadro — o examinador deve ficar fora do enquadramento até o valor travar.";
+      setTestUi((u) => (u.message === twoPeopleMessage ? u : { ...u, message: twoPeopleMessage }));
+      speech.speak(twoPeopleMessage);
+      return;
+    }
 
     const requiredOk =
       !!landmarks &&
@@ -242,9 +382,35 @@ export function CameraFlow() {
         const lostMessage = "Perdi a referência do seu braço. Volte à posição indicada.";
         setTestUi((u) => ({ ...u, lost: true, message: lostMessage }));
         speech.speak(lostMessage, { force: true });
+        if (validationMode) {
+          addValidationRecord({
+            algorithmVersion: ALGORITHM_VERSION,
+            volunteerCode: validationSession.volunteerCode,
+            examinerCode: validationSession.examinerCode,
+            region: "ombro",
+            test: item.movement,
+            side: item.side,
+            repetitionIndex: repIndexRef.current + 1,
+            status: "cancelada",
+            cancelReason: "perdeu_referencia_durante_movimento",
+            stablePeakDeg: null,
+            meanDeg: null,
+            rawMaxDeg: null,
+            avgLandmarkConfidence: null,
+            trunkCompensationDeg: null,
+            view: "frente",
+            instrument: validationSession.instrument,
+            referenceValueDeg: null,
+            secondsToConfirm: null,
+            userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+            timestampIso: new Date().toISOString(),
+          });
+        }
         // reinicia a repetição atual para não misturar dados incompletos
         machineRef.current.reset();
         framesBufferRef.current = [];
+        rawAngleBufferRef.current = [];
+        visibilitySamplesRef.current = [];
         capturingRef.current = false;
       }
       return;
@@ -279,6 +445,8 @@ export function CameraFlow() {
       startTsRef.current = timestamp;
       capturingRef.current = true;
       framesBufferRef.current = [];
+      rawAngleBufferRef.current = [];
+      visibilitySamplesRef.current = [];
     }
 
     if (capturingRef.current) {
@@ -291,52 +459,32 @@ export function CameraFlow() {
         trunkAngle,
         armAngle: angle,
       });
+      if (validationMode) {
+        rawAngleBufferRef.current.push(rawAngle);
+        const visSamples = [shoulder.visibility, elbow.visibility, hip.visibility].filter(
+          (v): v is number => v !== undefined
+        );
+        if (visSamples.length) {
+          visibilitySamplesRef.current.push(visSamples.reduce((a, b) => a + b, 0) / visSamples.length);
+        }
+      }
     }
 
     if (detection.justReachedPeak) {
       peakTsRef.current = timestamp;
-      speech.speak("Pode voltar.", { force: true, interrupt: false });
+      if (validationMode) {
+        awaitingReferenceRef.current = true;
+        lockedAtMsRef.current = Date.now();
+        setTestUi((u) => ({ ...u, awaitingReference: true, message: "" }));
+        speech.speak("Segure a posição.", { force: true, interrupt: false });
+      } else {
+        speech.speak("Pode voltar.", { force: true, interrupt: false });
+      }
     }
 
-    if (detection.justCompleted) {
-      capturingRef.current = false;
-      const maxAngle = machineRef.current.getPeakAngle();
-      const neutral = item.side === "right" ? baseline.neutralArmAngleRight : baseline.neutralArmAngleLeft;
-      const duration = calculateMovementDuration(startTsRef.current, peakTsRef.current || timestamp);
-      const attempt: MovementAttempt = {
-        side: item.side,
-        movement: item.movement,
-        repetitionIndex: repIndexRef.current + 1,
-        frames: framesBufferRef.current,
-        maxAngle,
-        startTimestamp: startTsRef.current,
-        peakTimestamp: peakTsRef.current || timestamp,
-        endTimestamp: timestamp,
-        duration,
-        averageAngularVelocity: calculateAngularVelocity(Math.max(0, maxAngle - neutral), duration),
-        maxTrunkCompensation: calculateMaxTrunkCompensation(framesBufferRef.current, baseline.neutralTrunkAngle),
-        angleBeforeCompensation: calculateAngleBeforeCompensation(framesBufferRef.current, baseline.neutralTrunkAngle),
-      };
-      useAssessmentStore.getState().addAttempt(attempt);
-      repIndexRef.current += 1;
-      framesBufferRef.current = [];
-
-      if (repIndexRef.current >= REPS) {
-        armedRef.current = false;
-        useAssessmentStore.getState().setScreen("painQuestion");
-        setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "Bloco concluído." }));
-      } else {
-        armedRef.current = false;
-        setTestUi((u) => ({ ...u, repIndex: repIndexRef.current, message: "Muito bem." }));
-        speech.speak("Muito bem.", { force: true, interrupt: false });
-        reArmTimerRef.current = setTimeout(() => {
-          machineRef.current.arm(neutral);
-          armedRef.current = true;
-          setTestUi((u) => ({ ...u, message: "" }));
-          speech.speak("Pode começar.", { force: true, interrupt: false });
-        }, 1600);
-      }
-    } else {
+    if (detection.justCompleted && !validationMode) {
+      completeRepetition(machineRef.current.getPeakAngle(), timestamp);
+    } else if (!detection.justCompleted) {
       setTestUi((u) => (u.angle === Math.round(angle) ? u : { ...u, angle: Math.round(angle) }));
     }
   };
@@ -363,7 +511,15 @@ export function CameraFlow() {
     });
   };
 
-  usePoseLandmarker(videoRef, (lm) => handleFrame(lm), camera.status === "ready");
+  usePoseLandmarker(
+    videoRef,
+    (lm, _ts, poseCount) => {
+      poseCountRef.current = poseCount;
+      handleFrame(lm);
+    },
+    camera.status === "ready",
+    { numPoses: validationMode ? 2 : 1 }
+  );
 
   const item = TEST_QUEUE[queueIndex];
 
@@ -443,16 +599,20 @@ export function CameraFlow() {
               </div>
             )}
 
-            <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
-              {testUi.angle !== null && testUi.countdown === null && !testUi.lost && (
-                <p className="mb-2 text-4xl font-bold text-white">{testUi.angle}°</p>
-              )}
-              <p className="text-base font-medium text-white">
-                {testUi.lost
-                  ? testUi.message
-                  : testUi.message || MOVEMENT_INSTRUCTION[item.movement](SIDE_LABEL[item.side])}
-              </p>
-            </div>
+            {testUi.awaitingReference ? (
+              <ReferenceValueEntry instrument={validationSession.instrument} onConfirm={handleReferenceConfirm} />
+            ) : (
+              <div className="absolute inset-x-0 bottom-0 bg-moveo-primary px-6 pb-8 pt-4 text-center">
+                {testUi.angle !== null && testUi.countdown === null && !testUi.lost && !validationMode && (
+                  <p className="mb-2 text-4xl font-bold text-white">{testUi.angle}°</p>
+                )}
+                <p className="text-base font-medium text-white">
+                  {testUi.lost
+                    ? testUi.message
+                    : testUi.message || MOVEMENT_INSTRUCTION[item.movement](SIDE_LABEL[item.side])}
+                </p>
+              </div>
+            )}
           </>
         )}
 

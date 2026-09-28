@@ -9,6 +9,7 @@ import { classifyTrunkCompensation } from "@/lib/trunkCompensation";
 import { painLabel } from "@/lib/resultRules";
 import { APP_CONFIG } from "@/config/app";
 import { Movement, MovementBlockResult, Side } from "@/lib/types";
+import { ValidationDataCard } from "@/components/shared/ValidationDataCard";
 
 const SIDE_LABEL: Record<Side, string> = { right: "Direito", left: "Esquerdo" };
 
@@ -267,6 +268,8 @@ export function ResultsScreen() {
           </Button>
         </Card>
       )}
+
+      <ValidationDataCard />
 
       <p className="mt-6 text-center text-xs leading-relaxed text-moveo-muted">
         {APP_CONFIG.copy.disclaimerFinal}

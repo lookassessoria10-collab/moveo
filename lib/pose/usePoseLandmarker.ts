@@ -18,14 +18,16 @@ export interface PoseLoopStats {
  */
 export function usePoseLandmarker(
   videoRef: React.RefObject<HTMLVideoElement>,
-  onFrame: (landmarks: FrameLandmarks | null, timestamp: number) => void,
-  active: boolean
+  onFrame: (landmarks: FrameLandmarks | null, timestamp: number, poseCount: number) => void,
+  active: boolean,
+  options: { numPoses?: number } = {}
 ) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<PoseLoopStats>({ fps: 0, detected: false });
   const onFrameRef = useRef(onFrame);
   onFrameRef.current = onFrame;
+  const numPoses = options.numPoses ?? 1;
 
   useEffect(() => {
     if (!active) return;
@@ -34,7 +36,7 @@ export function usePoseLandmarker(
     let lastFrameCount = 0;
     let fpsWindowStart = performance.now();
 
-    loadPoseLandmarker()
+    loadPoseLandmarker(numPoses)
       .then((landmarker) => {
         if (cancelled) return;
         setReady(true);
@@ -49,10 +51,11 @@ export function usePoseLandmarker(
           const nowMs = performance.now();
           try {
             const result = landmarker.detectForVideo(video, nowMs);
+            const poseCount = result.landmarks?.length ?? 0;
             const landmarks = convertLandmarks(
               result.landmarks?.[0] as { x: number; y: number; z?: number; visibility?: number }[] | undefined
             );
-            onFrameRef.current(landmarks, nowMs);
+            onFrameRef.current(landmarks, nowMs, poseCount);
 
             lastFrameCount++;
             if (nowMs - fpsWindowStart >= 1000) {
@@ -77,7 +80,7 @@ export function usePoseLandmarker(
       cancelled = true;
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [active, videoRef]);
+  }, [active, videoRef, numPoses]);
 
   return { ready, error, stats };
 }

@@ -17,6 +17,7 @@ import { buildDemoKneeResult } from "./demoData";
 import type { PainDuringMovement } from "@/lib/types";
 
 export type KneeScreen =
+  | "validationSetup"
   | "symptomSide"
   | "initialPain"
   | "problemDuration"

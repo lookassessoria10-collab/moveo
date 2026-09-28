@@ -17,6 +17,7 @@ import { generateSummary } from "@/lib/resultRules";
 import { buildDemoResult } from "@/lib/demoData";
 
 export type Screen =
+  | "validationSetup"
   | "welcome"
   | "symptomSide"
   | "initialPain"
